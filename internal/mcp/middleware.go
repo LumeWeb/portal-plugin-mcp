@@ -44,6 +44,12 @@ func (mw *Middleware) Protect(next http.Handler) http.Handler {
 		})
 	}
 
+	// TODO: enforce RFC 8707 resource binding (and token scopes) here. The
+	// current validation proves only that the token is known and unexpired, not
+	// that it was issued for this MCP resource. core.OAuthProviderService only
+	// surfaces (userID, expiry, ok), so resource/scope enforcement is tracked
+	// as a follow-up that extends the OAuth provider service to return the
+	// token's bound resource and granted scopes.
 	verifier := func(ctx context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
 		_, exp, ok := mw.oauthSvc.ValidateAccessToken(ctx, token)
 		if !ok {
