@@ -1,0 +1,11 @@
+name: Build
+
+on:
+  push:
+    branches: [ develop ]
+  pull_request:
+    branches: [ develop ]
+
+jobs:
+  build:
+    uses: LumeWeb/workflows/.github/workflows/build-plugin.yml@develop
