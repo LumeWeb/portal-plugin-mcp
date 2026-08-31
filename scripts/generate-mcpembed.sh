@@ -24,14 +24,12 @@ if [ -z "$PINNER_DIR" ] || [ ! -d "$PINNER_DIR" ]; then
   exit 1
 fi
 
-# Go extracts dependency modules read-only in the module cache. On GitHub
-# Actions the runner is a non-root user, so writing the generated *_templ.go /
-# appsassets / css outputs under the module dir fails with "permission denied".
-# Make the module dir (re)writable by its owner before regenerating — only in
-# GH Actions, to avoid mutating the shared module cache on local machines.
-if [ "${GITHUB_ACTIONS:-false}" = "true" ]; then
-  chmod -R u+w "$PINNER_DIR"
-fi
+# Go extracts dependency modules read-only in the module cache by default (on
+# every machine, not just CI), so writing the generated *_templ.go / appsassets
+# / css outputs under the module dir fails with "permission denied" for any
+# non-root user. Make the module dir (re)writable by its owner before
+# regenerating; generation necessarily mutates this cache in place.
+chmod -R u+w "$PINNER_DIR"
 
 echo "regenerating mcpembed assets in $PINNER_DIR"
 make -C "$PINNER_DIR" mcpembed
