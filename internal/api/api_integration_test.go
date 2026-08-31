@@ -57,6 +57,14 @@ func TestMCPProtectedResourceMetadata(t *testing.T) {
 	}, getMCPAPITestOptions())
 }
 
+func TestMCPRootRedirectsToResourcePath(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		rec := request(t, ctx, http.MethodGet, "/", nil)
+		require.Equal(t, http.StatusPermanentRedirect, rec.Code)
+		require.Equal(t, "/mcp", rec.Header().Get("Location"))
+	}, getMCPAPITestOptions())
+}
+
 func TestMCPEndpointUnauthorized(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		rec := request(t, ctx, http.MethodPost, "/mcp", []byte(`{}`))
