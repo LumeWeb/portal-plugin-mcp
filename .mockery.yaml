@@ -1,0 +1,11 @@
+template: testify
+template-data:
+  unroll-variadic: true
+filename: "{{.InterfaceName}}.go"
+packages:
+  go.lumeweb.com/portal/core:
+    config:
+      dir: ./internal/testing/mocks
+      pkgname: "mocks"
+    interfaces:
+      OAuthProviderService: {}
