@@ -28,18 +28,21 @@ func oauthServerError(err error) (code string, status int) {
 	}
 }
 
-// writeErrAndLog logs the underlying failure and writes the mapped
-// oauthServerError response. The full error and the caller-supplied detail
-// (public context such as the resource URL) are logged for operability but
-// never echoed to the client.
+// writeErrAndLog writes the mapped oauthServerError response and logs the
+// underlying failure. ErrOAuthDisabled and ErrResourceNotRegistered are
+// expected states on public, unauthenticated discovery/registration endpoints
+// and can be provoked by any client, so they are logged at debug to avoid
+// unbounded error-level alerting; genuinely unexpected failures log at error.
+// Internal error strings are never echoed to the client.
 func writeErrAndLog(logger *core.Logger, w http.ResponseWriter, op, detail string, err error) {
 	code, status := oauthServerError(err)
 	if logger != nil {
-		logger.Error("oauth: "+op+" failed",
-			zap.Error(err),
-			zap.String("detail", detail),
-			zap.Int("http_status", status),
-		)
+		fields := []zap.Field{zap.String("detail", detail), zap.Int("http_status", status)}
+		if errors.Is(err, portalservice.ErrOAuthDisabled) || errors.Is(err, portalservice.ErrResourceNotRegistered) {
+			logger.Debug("oauth: "+op+": "+err.Error(), fields...)
+		} else {
+			logger.Error("oauth: "+op+" failed", append([]zap.Field{zap.Error(err)}, fields...)...)
+		}
 	}
 	writeJSON(w, status, map[string]string{"error": code})
 }
