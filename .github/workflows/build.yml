@@ -12,4 +12,19 @@ jobs:
     with:
       additional_dependencies: 'go.lumeweb.com/portal-plugin-core@develop,go.lumeweb.com/portal-plugin-dashboard@develop'
       build_tags: no_tunnel
+      # mcpembed regenerates pinner-cli's app JS bundles via pnpm, which is not
+      # present in the portal-builder container; install Node + pnpm before
+      # `go generate` runs.
+      setup_script: |
+        apt-get update -y
+        apt-get install -y curl ca-certificates
+        curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+        apt-get install -y nodejs
+        npm install -g pnpm
+      # The OTel monolith (go.opentelemetry.io/contrib/propagators@v0.22.0, dragged
+      # in via pinner-cli -> cloudflared) collides with the split propagators/b3
+      # module during the aggregated portal build. The plugin opts out of the
+      # tunnel stack (build_tags: no_tunnel), so nothing needs the monolith —
+      # exclude it to keep the module graph unambiguous.
+      excludes: go.opentelemetry.io/contrib/propagators@v0.22.0
     secrets: inherit

@@ -2,11 +2,10 @@ package mcp
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,6 +46,14 @@ func NewMiddleware(oauthSvc core.OAuthProviderService, baseURL, resourceURL stri
 	}
 }
 
+// WrapHTTP implements the mcpembed.OAuthHandler seam so this middleware can
+// gate the embedded pinner MCP handler. It is OAuth enforcement: validate the
+// bearer token and reject invalid/insufficient tokens with a full RFC 6750/
+// 9728 challenge, else pass through to next.
+func (mw *Middleware) WrapHTTP(next http.Handler) http.Handler {
+	return mw.Protect(next)
+}
+
 // Protect wraps the MCP handler so only valid OAuth bearer tokens can proceed.
 func (mw *Middleware) Protect(next http.Handler) http.Handler {
 	if mw.oauthSvc == nil {
@@ -72,7 +79,12 @@ func (mw *Middleware) Protect(next http.Handler) http.Handler {
 			// The SDK enforces mw.requiredScopes against this grant (RFC 6749 §5.2).
 			Scopes:     strings.Fields(vt.Scope),
 			Expiration: vt.Expiry,
-			UserID:     tokenPrincipal(token),
+			// Bind identity to the numeric user ID. The SDK stores this on the
+			// request context (auth.TokenInfoFromContext) so the hosted server's
+			// CredentialResolver can mint a per-user Portal API JWT downstream;
+			// it also serves the SDK's session-binding purpose (a stable per-user
+			// identifier).
+			UserID: strconv.FormatUint(uint64(vt.UserID), 10),
 		}, nil
 	}
 	protected := auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions{
@@ -109,13 +121,6 @@ func deny(w http.ResponseWriter, metadataURL, desc string) {
 		"error":             "invalid_token",
 		"error_description": desc,
 	})
-}
-
-// tokenPrincipal derives a stable, opaque principal from a bearer token so a
-// session is bound to a single user without leaking the token's value.
-func tokenPrincipal(token string) string {
-	digest := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(digest[:])
 }
 
 // oauthChallengeWriter upgrades the go-sdk's bare bearer-auth 401 into a full

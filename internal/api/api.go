@@ -1,11 +1,13 @@
 package api
 
 import (
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
+	"go.lumeweb.com/pinner-cli/mcpembed"
 	"go.lumeweb.com/portal-plugin-mcp/internal"
 	pluginConfig "go.lumeweb.com/portal-plugin-mcp/internal/config"
 	"go.lumeweb.com/portal-plugin-mcp/internal/mcp"
@@ -25,7 +27,6 @@ var _ core.API = (*API)(nil)
 type API struct {
 	*core.BaseComponent
 	oauthSvc core.OAuthProviderService
-	server   *mcp.Server
 
 	// baseURL is the public URL of the MCP API (e.g. https://mcp.example.com).
 	baseURL string
@@ -36,6 +37,16 @@ type API struct {
 	resourcePath string
 	// scopes are the scopes this MCP server supports.
 	scopes []string
+
+	// portalEndpoint is the portal base domain the hosted operations target
+	// (account/ipfs/websites/dns subdomains resolve under it).
+	portalEndpoint string
+	// secure indicates the API operations use HTTPS.
+	secure bool
+	// identityKey signs the per-user Portal API JWTs the pinner operations send.
+	identityKey ed25519.PrivateKey
+	// domain is the portal domain used as the JWT issuer/audience.
+	domain string
 }
 
 func (a *API) ID() string            { return a.Name() }
@@ -81,6 +92,16 @@ func NewAPI() (core.API, []core.ContextBuilderOption, error) {
 			// GetService fails fast (Fatal) when the service is missing.
 			api.oauthSvc = core.GetService[core.OAuthProviderService](ctx, core.OAUTH_PROVIDER_SERVICE)
 
+			// The hosted operations call the Portal API's account/ipfs/
+			// websites/dns subdomains, which resolve under the portal's base
+			// domain. They authenticate with per-user Portal API JWTs, so
+			// capture the identity key and domain here.
+			coreCfg := ctx.Config().Config().Core
+			api.portalEndpoint = coreCfg.Domain
+			api.secure = true
+			api.identityKey = coreCfg.Identity.PrivateKey()
+			api.domain = coreCfg.Domain
+
 			// Register this MCP server as a protected resource so the OAuth
 			// provider can issue tokens for it (RFC 8707) and serve its
 			// RFC 9728 protected-resource metadata.
@@ -109,9 +130,28 @@ func NewAPI() (core.API, []core.ContextBuilderOption, error) {
 }
 
 func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) error {
-	a.server = mcp.NewServer(nil)
+	catalogDeps, err := mcpembed.NewCatalogDeps(a.portalEndpoint, a.secure)
+	if err != nil {
+		return fmt.Errorf("mcp: build catalog deps: %w", err)
+	}
 
-	handler := mcp.NewMiddleware(a.oauthSvc, a.baseURL, a.resourceURL, a.scopes).Protect(mcp.NewStreamableHandler(a.server))
+	handler, err := mcpembed.New(mcpembed.Options{
+		// The hosted surface: account/subscription plus IPFS/websites/dns/ipns/
+		// ens/upload operations (never the Sia vault or portal admin).
+		Surface:    mcpembed.SurfaceHosted,
+		CatalogDeps: catalogDeps,
+		// Resolve the OAuth-authenticated caller to a per-user Portal API JWT.
+		CredentialResolver: mcp.NewCredentialResolver(a.identityKey, a.domain, 0),
+		// Reuse the existing OAuth bearer gate as the handler-level OAuth
+		// enforcement (RFC 6750/9728 challenges).
+		OAuthHandler: mcp.NewMiddleware(a.oauthSvc, a.baseURL, a.resourceURL, a.scopes),
+		// The handler is served through the portal's router/proxy, which
+		// presents a non-loopback Origin; disable the localhost protection.
+		DisableLocalhostProtection: true,
+	})
+	if err != nil {
+		return fmt.Errorf("mcp: build hosted server: %w", err)
+	}
 
 	echoRouter := router.GetRouter(gRouter)
 	if echoRouter == nil {
