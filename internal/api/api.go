@@ -117,10 +117,30 @@ func NewAPI() (core.API, []core.ContextBuilderOption, error) {
 				// down the whole portal.
 				if errors.Is(err, portalservice.ErrOAuthDisabled) {
 					ctx.Logger().Warn("mcp: oauth provider disabled; MCP endpoint unavailable",
-						zap.Error(err))
+						zap.Error(err), zap.String("resource_url", api.resourceURL))
 					return nil
 				}
+				ctx.Logger().Error("mcp: failed to register protected resource",
+					zap.Error(err), zap.String("resource_url", api.resourceURL))
 				return fmt.Errorf("mcp: register resource: %w", err)
+			}
+
+			// Read the resource back to confirm registration landed, so a
+			// provider-side ordering or registry issue is visible at boot
+			// rather than surfacing later as a 404 on the PRM endpoint.
+			reg, err := api.oauthSvc.GetResource(ctx, api.resourceURL)
+			if err != nil {
+				ctx.Logger().Error("mcp: failed to read back registered resource",
+					zap.Error(err), zap.String("resource_url", api.resourceURL))
+				return fmt.Errorf("mcp: read back resource: %w", err)
+			}
+			ctx.Logger().Info("mcp: protected resource registered",
+				zap.String("resource_url", api.resourceURL),
+				zap.Bool("visible", reg != nil),
+				zap.Strings("scopes", api.scopes))
+			if reg == nil {
+				ctx.Logger().Error("mcp: protected resource not visible after registration",
+					zap.String("resource_url", api.resourceURL))
 			}
 
 			return nil

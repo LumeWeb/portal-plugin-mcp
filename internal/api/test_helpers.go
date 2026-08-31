@@ -37,6 +37,13 @@ func getMCPAPITestOptions() coreTesting.TestContextBuilderOption {
 				Return("mcp.example.com").Maybe()
 			core.GetService[*portalMocks.MockOAuthProviderService](ctx, core.OAUTH_PROVIDER_SERVICE).
 				EXPECT().RegisterResource(mock.Anything, mock.Anything).Return(nil).Maybe()
+			// The startup reads the resource back after registering it to
+			// confirm it landed; satisfy that with a visible registration.
+			core.GetService[*portalMocks.MockOAuthProviderService](ctx, core.OAUTH_PROVIDER_SERVICE).
+				EXPECT().GetResource(mock.Anything, mock.Anything).Return(&core.OAuthProtectedResource{
+				ResourceURL: "https://mcp.example.com/mcp",
+				DisplayName: "Portal MCP Server",
+			}, nil).Maybe()
 			return ctx, nil
 		},
 		coreTesting.WithAPI(internal.PluginName, NewAPI),
