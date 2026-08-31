@@ -11,4 +11,5 @@ jobs:
     uses: LumeWeb/workflows/.github/workflows/build-plugin.yml@develop
     with:
       additional_dependencies: 'go.lumeweb.com/portal-plugin-core@develop,go.lumeweb.com/portal-plugin-dashboard@develop'
+      build_tags: no_tunnel
     secrets: inherit
