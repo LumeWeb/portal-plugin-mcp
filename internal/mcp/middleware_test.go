@@ -9,7 +9,15 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/portal-plugin-mcp/internal/testing/mocks"
+	"go.lumeweb.com/oauth"
+	portalMocks "go.lumeweb.com/portal/core/testing/mocks"
+)
+
+const (
+	testBaseURL    = "https://mcp.example.com"
+	testResource   = "https://mcp.example.com/mcp"
+	testScope      = "mcp offline_access"
+	testExpiry     = 1 * time.Hour
 )
 
 func passthrough() http.Handler {
@@ -19,8 +27,23 @@ func passthrough() http.Handler {
 	})
 }
 
+func validToken(userID uint, resource, scope string, ok bool) oauth.ValidatedToken {
+	vt := oauth.ValidatedToken{
+		UserID:   userID,
+		Expiry:   time.Now().Add(testExpiry),
+		Resource: resource,
+		ClientID: "client_test",
+		Scope:    scope,
+	}
+	if !ok {
+		vt.Expiry = time.Time{}
+		vt.Resource = ""
+	}
+	return vt
+}
+
 func TestMiddlewareProtect_NilServiceDenies(t *testing.T) {
-	mw := NewMiddleware(nil, "https://mcp.example.com")
+	mw := NewMiddleware(nil, testBaseURL, testResource, nil)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
 
@@ -33,11 +56,11 @@ func TestMiddlewareProtect_NilServiceDenies(t *testing.T) {
 }
 
 func TestMiddlewareProtect_ValidTokenPassesThrough(t *testing.T) {
-	oauthSvc := mocks.NewMockOAuthProviderService(t)
-	oauthSvc.EXPECT().ValidateAccessToken(mock.Anything, "valid-token").
-		Return(uint(7), time.Now().Add(time.Hour), true)
+	oauthSvc := portalMocks.NewMockOAuthProviderService(t)
+	oauthSvc.EXPECT().ValidateAccessTokenInfo(mock.Anything, "valid-token").
+		Return(validToken(7, testResource, testScope, true), true)
 
-	mw := NewMiddleware(oauthSvc, "https://mcp.example.com")
+	mw := NewMiddleware(oauthSvc, testBaseURL, testResource, []string{"mcp", "offline_access"})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
 	req.Header.Set("Authorization", "Bearer valid-token")
@@ -48,12 +71,47 @@ func TestMiddlewareProtect_ValidTokenPassesThrough(t *testing.T) {
 	require.Equal(t, "ok", rec.Body.String())
 }
 
-func TestMiddlewareProtect_InvalidTokenChallenges(t *testing.T) {
-	oauthSvc := mocks.NewMockOAuthProviderService(t)
-	oauthSvc.EXPECT().ValidateAccessToken(mock.Anything, "expired-token").
-		Return(uint(0), time.Time{}, false)
+func TestMiddlewareProtect_WrongResourceChallenges(t *testing.T) {
+	// Token minted for a sibling resource must not be accepted (RFC 8707
+	// audience binding), even though it is otherwise valid and unexpired.
+	oauthSvc := portalMocks.NewMockOAuthProviderService(t)
+	oauthSvc.EXPECT().ValidateAccessTokenInfo(mock.Anything, "other-resource-token").
+		Return(validToken(7, "https://sibling.example.com/api", testScope, true), true)
 
-	mw := NewMiddleware(oauthSvc, "https://mcp.example.com")
+	mw := NewMiddleware(oauthSvc, testBaseURL, testResource, []string{"mcp", "offline_access"})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	req.Header.Set("Authorization", "Bearer other-resource-token")
+
+	mw.Protect(passthrough()).ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.Contains(t, strings.ToLower(rec.Header().Get("WWW-Authenticate")), "error=\"invalid_token\"")
+}
+
+func TestMiddlewareProtect_MissingScopeRejects(t *testing.T) {
+	// Correct resource but token grants only "offline_access", not the required
+	// "mcp" scope: the SDK's scope check returns 403 insufficient_scope.
+	oauthSvc := portalMocks.NewMockOAuthProviderService(t)
+	oauthSvc.EXPECT().ValidateAccessTokenInfo(mock.Anything, "under-scoped-token").
+		Return(validToken(7, testResource, "offline_access", true), true)
+
+	mw := NewMiddleware(oauthSvc, testBaseURL, testResource, []string{"mcp", "offline_access"})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	req.Header.Set("Authorization", "Bearer under-scoped-token")
+
+	mw.Protect(passthrough()).ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestMiddlewareProtect_InvalidTokenChallenges(t *testing.T) {
+	oauthSvc := portalMocks.NewMockOAuthProviderService(t)
+	oauthSvc.EXPECT().ValidateAccessTokenInfo(mock.Anything, "expired-token").
+		Return(validToken(0, "", "", false), false)
+
+	mw := NewMiddleware(oauthSvc, testBaseURL, testResource, nil)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
 	req.Header.Set("Authorization", "Bearer expired-token")
@@ -68,9 +126,9 @@ func TestMiddlewareProtect_InvalidTokenChallenges(t *testing.T) {
 }
 
 func TestMiddlewareProtect_MissingTokenChallenges(t *testing.T) {
-	oauthSvc := mocks.NewMockOAuthProviderService(t)
+	oauthSvc := portalMocks.NewMockOAuthProviderService(t)
 
-	mw := NewMiddleware(oauthSvc, "https://mcp.example.com")
+	mw := NewMiddleware(oauthSvc, testBaseURL, testResource, nil)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
 

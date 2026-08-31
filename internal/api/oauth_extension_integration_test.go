@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/oauth"
-	"go.lumeweb.com/portal-plugin-mcp/internal/testing/mocks"
 	"go.lumeweb.com/portal/core"
+	portalMocks "go.lumeweb.com/portal/core/testing/mocks"
 	coreTesting "go.lumeweb.com/portal/core/testing"
 )
 
@@ -20,7 +20,7 @@ import (
 // provider service and the default mock auth service, mirroring the
 // portal-plugin-sia API test harness.
 var oauthExtTestOptions = coreTesting.CombineOptions(
-	coreTesting.WithMockServiceFactory(core.OAUTH_PROVIDER_SERVICE, mocks.NewMockOAuthProviderService),
+	coreTesting.WithMockServiceFactory(core.OAUTH_PROVIDER_SERVICE, portalMocks.NewMockOAuthProviderService),
 	coreTesting.WithDomain("example.com"),
 	func(ctx coreTesting.TestContext) (coreTesting.TestContext, error) {
 		mockHTTPSvc := coreTesting.GetMockHTTPService(ctx)
@@ -31,8 +31,8 @@ var oauthExtTestOptions = coreTesting.CombineOptions(
 	coreTesting.WithAPIExtension(NewOAuthExtension()),
 )
 
-func oauthExt(ctx coreTesting.TestContext) *mocks.MockOAuthProviderService {
-	return core.GetService[*mocks.MockOAuthProviderService](ctx, core.OAUTH_PROVIDER_SERVICE)
+func oauthExt(ctx coreTesting.TestContext) *portalMocks.MockOAuthProviderService {
+	return core.GetService[*portalMocks.MockOAuthProviderService](ctx, core.OAUTH_PROVIDER_SERVICE)
 }
 
 func TestOAuthMetadataRewritesEndpoints(t *testing.T) {

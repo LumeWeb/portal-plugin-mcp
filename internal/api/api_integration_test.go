@@ -11,15 +11,23 @@ import (
 	"go.lumeweb.com/oauth"
 	"go.lumeweb.com/portal-plugin-mcp/internal"
 	pluginConfig "go.lumeweb.com/portal-plugin-mcp/internal/config"
-	"go.lumeweb.com/portal-plugin-mcp/internal/testing/mocks"
 	"go.lumeweb.com/portal/core"
 	coreTesting "go.lumeweb.com/portal/core/testing"
+	portalMocks "go.lumeweb.com/portal/core/testing/mocks"
+)
+
+// The MCP API's default config registers resourceURL https://mcp.example.com/mcp
+// with supported scope "offline_access", so authorized tokens must carry that
+// resource and scope.
+const (
+	mcpResource = "mcp.example.com/mcp"
+	mcpScope    = "offline_access"
 )
 
 // mcpAPITestOptions boots the MCP API against a mocked OAuth provider service,
 // following the portal-plugin-sia API test harness pattern.
 var mcpAPITestOptions = coreTesting.CombineOptions(
-	coreTesting.WithMockServiceFactory(core.OAUTH_PROVIDER_SERVICE, mocks.NewMockOAuthProviderService),
+	coreTesting.WithMockServiceFactory(core.OAUTH_PROVIDER_SERVICE, portalMocks.NewMockOAuthProviderService),
 	coreTesting.WithAPIConfig(internal.PluginName, &pluginConfig.APIConfig{}),
 	coreTesting.WithDomain("example.com"),
 	// The API's startup registers the MCP resource on the OAuth provider, so
@@ -29,7 +37,7 @@ var mcpAPITestOptions = coreTesting.CombineOptions(
 		mockHTTPSvc := coreTesting.GetMockHTTPService(ctx)
 		mockHTTPSvc.EXPECT().APISubdomain(mock.AnythingOfType("string"), mock.AnythingOfType("bool")).
 			Return("https://mcp.example.com").Maybe()
-		core.GetService[*mocks.MockOAuthProviderService](ctx, core.OAUTH_PROVIDER_SERVICE).
+		core.GetService[*portalMocks.MockOAuthProviderService](ctx, core.OAUTH_PROVIDER_SERVICE).
 			EXPECT().RegisterResource(mock.Anything, mock.Anything).Return(nil).Maybe()
 		return ctx, nil
 	},
@@ -38,8 +46,8 @@ var mcpAPITestOptions = coreTesting.CombineOptions(
 	coreTesting.WithPlugins(),
 )
 
-func mcpOAuth(ctx coreTesting.TestContext) *mocks.MockOAuthProviderService {
-	return core.GetService[*mocks.MockOAuthProviderService](ctx, core.OAUTH_PROVIDER_SERVICE)
+func mcpOAuth(ctx coreTesting.TestContext) *portalMocks.MockOAuthProviderService {
+	return core.GetService[*portalMocks.MockOAuthProviderService](ctx, core.OAUTH_PROVIDER_SERVICE)
 }
 
 func request(t *testing.T, ctx coreTesting.TestContext, method, path string, body []byte) *httptest.ResponseRecorder {
@@ -83,8 +91,14 @@ func TestMCPEndpointUnauthorized(t *testing.T) {
 
 func TestMCPEndpointAuthorized(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
-		mcpOAuth(ctx).EXPECT().ValidateAccessToken(mock.Anything, "valid-token").
-			Return(uint(1), time.Now().Add(time.Hour), true)
+		mcpOAuth(ctx).EXPECT().ValidateAccessTokenInfo(mock.Anything, "valid-token").
+			Return(oauth.ValidatedToken{
+				UserID:   1,
+				Expiry:   time.Now().Add(time.Hour),
+				Resource: mcpResource,
+				ClientID: "client_test",
+				Scope:    mcpScope,
+			}, true)
 
 		req := ctx.NewAPIRequest(http.MethodPost, "/mcp", []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`))
 		req.Header.Set("Authorization", "Bearer valid-token")

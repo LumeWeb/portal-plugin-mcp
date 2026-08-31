@@ -109,7 +109,7 @@ func NewAPI() (core.API, []core.ContextBuilderOption, error) {
 func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) error {
 	a.server = mcp.NewServer(nil)
 
-	handler := mcp.NewMiddleware(a.oauthSvc, a.baseURL).Protect(mcp.NewStreamableHandler(a.server))
+	handler := mcp.NewMiddleware(a.oauthSvc, a.baseURL, a.resourceURL, a.scopes).Protect(mcp.NewStreamableHandler(a.server))
 
 	echoRouter := router.GetRouter(gRouter)
 	if echoRouter == nil {
