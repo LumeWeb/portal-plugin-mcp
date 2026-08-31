@@ -2,6 +2,8 @@ package api
 
 import (
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"go.lumeweb.com/oauth"
@@ -152,7 +154,7 @@ func (e *OAuthExtension) Configure(gRouter router.Router, accessSvc core.AccessS
 		),
 		router.NewRoute(http.MethodPost, "/api/auth/oauth/authorize", e.handleAuthorizePOST,
 			authorizePostSwagger,
-			router.WithMiddlewares(authorizePOSTAuth),
+			router.WithMiddlewares(authorizePOSTAuth, e.verifySameOrigin()),
 			router.WithCors(),
 		),
 		// Token endpoint (RFC 6749 §5): code exchange + refresh token grant.
@@ -173,6 +175,50 @@ func (e *OAuthExtension) Configure(gRouter router.Router, accessSvc core.AccessS
 // httpHandler adapts an http.HandlerFunc into an echo.HandlerFunc.
 func httpHandler(h http.HandlerFunc) echo.HandlerFunc {
 	return echo.WrapHandler(h)
+}
+
+// verifySameOrigin guards the authorize POST against CSRF. The consent page
+// submits with same-origin fetch and credentials: "same-origin", so a genuine
+// approval always carries an Origin matching the dashboard host. A cross-site
+// request cannot set the Origin header to the victim's host, so rejecting a
+// mismatched (or absent, for non-browser clients) origin blocks coerced
+// approvals. GET is left open because it only renders the consent page.
+func (e *OAuthExtension) verifySameOrigin() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			origin := c.Request().Header.Get("Origin")
+			if origin != "" && !sameOrigin(e.baseURL, origin) {
+				return echo.NewHTTPError(http.StatusForbidden, "cross-origin request rejected")
+			}
+			return next(c)
+		}
+	}
+}
+
+// sameOrigin reports whether origin matches the baseURL's host. The Origin
+// header is always absolute (scheme://host); baseURL may or may not carry a
+// scheme. Scheme is compared only when both are present so a scheme-less
+// baseURL (common in tests) still matches.
+func sameOrigin(baseURL, origin string) bool {
+	o, err := url.Parse(origin)
+	if err != nil || o.Host == "" {
+		return false
+	}
+	b, err := url.Parse(baseURL)
+	if err != nil {
+		return false
+	}
+	if b.Host == "" {
+		b, err = url.Parse("https://" + baseURL)
+		if err != nil {
+			return false
+		}
+	}
+	// Hostname() strips any port, so an explicit ":443" still matches.
+	if !strings.EqualFold(o.Hostname(), b.Hostname()) {
+		return false
+	}
+	return o.Scheme == "" || b.Scheme == "" || o.Scheme == b.Scheme
 }
 
 // ID returns a stable identifier for this extension.

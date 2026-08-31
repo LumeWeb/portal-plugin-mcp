@@ -92,6 +92,41 @@ func TestOAuthAuthorizeGET_AuthenticatedRendersConsent(t *testing.T) {
 	}, oauthExtTestOptions)
 }
 
+func TestOAuthAuthorizePOST_CrossOriginRejected(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		token, _ := coreTesting.NewJWTHelper(ctx).CreateLoginToken(1)
+		q := url.Values{"response_type": {"code"}, "client_id": {"client_abc"}}
+
+		req := ctx.NewAPIRequest(http.MethodPost, "/api/auth/oauth/authorize?"+q.Encode(), mustMarshalJSON(t, OAuthApproveRequest{Approve: true}))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Origin", "https://evil.example.com")
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusForbidden, rec.Code)
+		// No authorization code must be issued for a cross-origin approval.
+		oauthExt(ctx).AssertNotCalled(t, "IssueAuthorizationCode", mock.Anything, mock.Anything, mock.Anything)
+	}, oauthExtTestOptions)
+}
+
+func TestOAuthAuthorizePOST_SameOriginProceeds(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		token, _ := coreTesting.NewJWTHelper(ctx).CreateLoginToken(1)
+		q := url.Values{"response_type": {"code"}, "client_id": {"client_abc"}}
+		oauthExt(ctx).EXPECT().ValidateAuthorizeRequest(mock.Anything, mock.Anything).Return(nil)
+		oauthExt(ctx).EXPECT().IssueAuthorizationCode(mock.Anything, mock.Anything, uint(1)).Return("code1", nil)
+
+		req := ctx.NewAPIRequest(http.MethodPost, "/api/auth/oauth/authorize?"+q.Encode(), mustMarshalJSON(t, OAuthApproveRequest{Approve: true}))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Origin", "https://dashboard.example.com")
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Body.String(), "code1")
+	}, oauthExtTestOptions)
+}
+
 func TestOAuthRegisterClient(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		oauthExt(ctx).EXPECT().RegisterClient(mock.Anything, mock.Anything).Return(&oauth.Client{
