@@ -7,10 +7,11 @@ require (
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/stretchr/testify v1.11.1
-	go.lumeweb.com/oauth v0.1.2
-	go.lumeweb.com/portal v0.5.2-0.20260830195540-2a0a03044eff
+	go.lumeweb.com/oauth v0.1.3
+	go.lumeweb.com/portal v0.5.2-0.20260831025550-4895b264ebdb
 	go.lumeweb.com/portal-middleware v0.3.7
 	go.lumeweb.com/portal-router v0.7.7
+	go.uber.org/zap v1.28.0
 	gorm.io/gorm v1.31.2
 )
 
@@ -196,7 +197,6 @@ require (
 	go.sia.tech/siastorage v0.2.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.28.0 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect

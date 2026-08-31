@@ -2,38 +2,17 @@ package api
 
 import (
 	"encoding/json"
-	"strings"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/oauth"
-	"go.lumeweb.com/portal-plugin-mcp/internal/testing/mocks"
-	"go.lumeweb.com/portal/core"
 	coreTesting "go.lumeweb.com/portal/core/testing"
 )
-
-// oauthExtTestOptions boots the dashboard API extension against a mocked OAuth
-// provider service and the default mock auth service, mirroring the
-// portal-plugin-sia API test harness.
-var oauthExtTestOptions = coreTesting.CombineOptions(
-	coreTesting.WithMockServiceFactory(core.OAUTH_PROVIDER_SERVICE, mocks.NewMockOAuthProviderService),
-	coreTesting.WithDomain("example.com"),
-	func(ctx coreTesting.TestContext) (coreTesting.TestContext, error) {
-		mockHTTPSvc := coreTesting.GetMockHTTPService(ctx)
-		mockHTTPSvc.EXPECT().APISubdomain(mock.AnythingOfType("string"), mock.AnythingOfType("bool")).
-			Return("https://dashboard.example.com").Maybe()
-		return ctx, nil
-	},
-	coreTesting.WithAPIExtension(NewOAuthExtension()),
-)
-
-func oauthExt(ctx coreTesting.TestContext) *mocks.MockOAuthProviderService {
-	return core.GetService[*mocks.MockOAuthProviderService](ctx, core.OAUTH_PROVIDER_SERVICE)
-}
 
 func TestOAuthMetadataRewritesEndpoints(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
@@ -50,16 +29,16 @@ func TestOAuthMetadataRewritesEndpoints(t *testing.T) {
 		require.Contains(t, body, "/api/auth/oauth/token")
 		require.Contains(t, body, "/api/auth/oauth/register")
 		require.NotContains(t, strings.TrimSuffix(body, "\n"), `"authorization_endpoint":"dashboard.example.com/oauth/authorize`)
-	}, oauthExtTestOptions)
+	}, getOAuthExtensionTestOptions())
 }
 
 func TestOAuthAuthorizeGET_UnauthenticatedRedirectsToAppLogin(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		q := url.Values{
-			"response_type": {"code"},
-			"client_id":     {"client_abc"},
-			"redirect_uri":  {"http://127.0.0.1:12345/cb"},
-			"state":         {"xyz"},
+			"response_type":         {"code"},
+			"client_id":             {"client_abc"},
+			"redirect_uri":          {"http://127.0.0.1:12345/cb"},
+			"state":                 {"xyz"},
 			"code_challenge":        {"ch"},
 			"code_challenge_method": {"S256"},
 		}
@@ -71,7 +50,7 @@ func TestOAuthAuthorizeGET_UnauthenticatedRedirectsToAppLogin(t *testing.T) {
 		require.Contains(t, loc, "/app-login")
 		require.Contains(t, loc, "to=")
 		require.Contains(t, loc, "app=client_abc")
-	}, oauthExtTestOptions)
+	}, getOAuthExtensionTestOptions())
 }
 
 func TestOAuthAuthorizeGET_AuthenticatedRendersConsent(t *testing.T) {
@@ -89,7 +68,7 @@ func TestOAuthAuthorizeGET_AuthenticatedRendersConsent(t *testing.T) {
 		require.Contains(t, rec.Header().Get("Content-Type"), "text/html")
 		require.Contains(t, rec.Body.String(), "client_abc")
 		require.Contains(t, rec.Body.String(), "Approve")
-	}, oauthExtTestOptions)
+	}, getOAuthExtensionTestOptions())
 }
 
 func TestOAuthAuthorizePOST_CrossOriginRejected(t *testing.T) {
@@ -106,7 +85,7 @@ func TestOAuthAuthorizePOST_CrossOriginRejected(t *testing.T) {
 		require.Equal(t, http.StatusForbidden, rec.Code)
 		// No authorization code must be issued for a cross-origin approval.
 		oauthExt(ctx).AssertNotCalled(t, "IssueAuthorizationCode", mock.Anything, mock.Anything, mock.Anything)
-	}, oauthExtTestOptions)
+	}, getOAuthExtensionTestOptions())
 }
 
 func TestOAuthAuthorizePOST_SameOriginProceeds(t *testing.T) {
@@ -124,7 +103,7 @@ func TestOAuthAuthorizePOST_SameOriginProceeds(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, rec.Code)
 		require.Contains(t, rec.Body.String(), "code1")
-	}, oauthExtTestOptions)
+	}, getOAuthExtensionTestOptions())
 }
 
 func TestOAuthRegisterClient(t *testing.T) {
@@ -134,15 +113,15 @@ func TestOAuthRegisterClient(t *testing.T) {
 		}, nil)
 
 		body := mustMarshalJSON(t, OAuthRegisterRequest{
-			ClientName:   "test-client",
-			RedirectURIs: []string{"http://127.0.0.1:9999/cb"},
-			GrantTypes:   []string{"authorization_code"},
+			ClientName:    "test-client",
+			RedirectURIs:  []string{"http://127.0.0.1:9999/cb"},
+			GrantTypes:    []string{"authorization_code"},
 			ResponseTypes: []string{"code"},
 		})
 		rec := request(t, ctx, http.MethodPost, "/api/auth/oauth/register", body)
 		require.Equal(t, http.StatusCreated, rec.Code)
 		require.Contains(t, rec.Body.String(), "new-client")
-	}, oauthExtTestOptions)
+	}, getOAuthExtensionTestOptions())
 }
 
 func TestOAuthTokenExchange(t *testing.T) {
@@ -165,7 +144,7 @@ func TestOAuthTokenExchange(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, rec.Code)
 		require.Contains(t, rec.Body.String(), `"access_token":"at"`)
-	}, oauthExtTestOptions)
+	}, getOAuthExtensionTestOptions())
 }
 
 func mustMarshalJSON(t *testing.T, v any) []byte {

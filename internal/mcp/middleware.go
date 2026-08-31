@@ -26,12 +26,25 @@ type Middleware struct {
 	// The protected-resource metadata is served at
 	// baseURL + "/.well-known/oauth-protected-resource".
 	baseURL string
+	// resourceURL is the canonical RFC 8707 resource (audience) this MCP
+	// server was registered as. Tokens minted for any other resource are
+	// rejected so a token issued for a sibling server cannot be replayed here.
+	resourceURL string
+	// requiredScopes are the scopes a token must carry to access the MCP
+	// endpoint. Missing scopes are rejected with 403 (insufficient_scope).
+	requiredScopes []string
 }
 
 // NewMiddleware builds an OAuth bearer middleware backed by the portal's
-// OAuth provider service.
-func NewMiddleware(oauthSvc core.OAuthProviderService, baseURL string) *Middleware {
-	return &Middleware{oauthSvc: oauthSvc, baseURL: strings.TrimRight(baseURL, "/")}
+// OAuth provider service. requiredScopes are enforced against the token's
+// granted scopes; resourceURL is enforced as the token's RFC 8707 audience.
+func NewMiddleware(oauthSvc core.OAuthProviderService, baseURL, resourceURL string, requiredScopes []string) *Middleware {
+	return &Middleware{
+		oauthSvc:       oauthSvc,
+		baseURL:        strings.TrimRight(baseURL, "/"),
+		resourceURL:    resourceURL,
+		requiredScopes: requiredScopes,
+	}
 }
 
 // Protect wraps the MCP handler so only valid OAuth bearer tokens can proceed.
@@ -44,25 +57,28 @@ func (mw *Middleware) Protect(next http.Handler) http.Handler {
 		})
 	}
 
-	// TODO: enforce RFC 8707 resource binding (and token scopes) here. The
-	// current validation proves only that the token is known and unexpired, not
-	// that it was issued for this MCP resource. core.OAuthProviderService only
-	// surfaces (userID, expiry, ok), so resource/scope enforcement is tracked
-	// as a follow-up that extends the OAuth provider service to return the
-	// token's bound resource and granted scopes.
 	verifier := func(ctx context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
-		_, exp, ok := mw.oauthSvc.ValidateAccessToken(ctx, token)
+		vt, ok := mw.oauthSvc.ValidateAccessTokenInfo(ctx, token)
 		if !ok {
 			return nil, fmt.Errorf("%w: the access token is unknown or has expired", auth.ErrInvalidToken)
 		}
+		// RFC 8707 audience binding: reject tokens minted for any resource other
+		// than this MCP server, so a token issued for a sibling resource cannot
+		// be replayed against MCP.
+		if mw.resourceURL != "" && vt.Resource != mw.resourceURL {
+			return nil, fmt.Errorf("%w: the access token was issued for a different resource", auth.ErrInvalidToken)
+		}
 		return &auth.TokenInfo{
-			Expiration: exp,
+			// The SDK enforces mw.requiredScopes against this grant (RFC 6749 §5.2).
+			Scopes:     strings.Fields(vt.Scope),
+			Expiration: vt.Expiry,
 			UserID:     tokenPrincipal(token),
 		}, nil
 	}
 	protected := auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions{
 		ResourceMetadataURL: mw.metadataURL(),
 		ClockSkew:           2 * time.Minute,
+		Scopes:              mw.requiredScopes,
 	})(next)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

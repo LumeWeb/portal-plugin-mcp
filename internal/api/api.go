@@ -67,14 +67,16 @@ func NewAPI() (core.API, []core.ContextBuilderOption, error) {
 			}
 			api.scopes = cfg.Scopes
 
-			baseURL := httpSvc.APISubdomain(api.Name(), true)
-			if baseURL == "" {
+			// The OAuth/MCP flow requires TLS, so the resource URL and the
+			// protected-resource metadata URL are always built as https. See
+			// BuildAbsoluteURL (mirrors the portal-plugin-billing helper).
+			api.baseURL = BuildAbsoluteURL(httpSvc, api.Name(), "", true)
+			if api.baseURL == "" {
 				// Fall back to the root domain when the MCP subdomain cannot be
 				// resolved in tests or single-host deployments.
-				baseURL = ctx.Config().Config().Core.Domain
+				api.baseURL = ctx.Config().Config().Core.Domain
 			}
-			api.baseURL = baseURL
-			api.resourceURL = baseURL + api.resourcePath
+			api.resourceURL = api.baseURL + api.resourcePath
 
 			// GetService fails fast (Fatal) when the service is missing.
 			api.oauthSvc = core.GetService[core.OAuthProviderService](ctx, core.OAUTH_PROVIDER_SERVICE)
@@ -109,7 +111,7 @@ func NewAPI() (core.API, []core.ContextBuilderOption, error) {
 func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) error {
 	a.server = mcp.NewServer(nil)
 
-	handler := mcp.NewMiddleware(a.oauthSvc, a.baseURL).Protect(mcp.NewStreamableHandler(a.server))
+	handler := mcp.NewMiddleware(a.oauthSvc, a.baseURL, a.resourceURL, a.scopes).Protect(mcp.NewStreamableHandler(a.server))
 
 	echoRouter := router.GetRouter(gRouter)
 	if echoRouter == nil {
