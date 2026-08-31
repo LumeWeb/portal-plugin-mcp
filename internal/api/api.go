@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -11,6 +12,8 @@ import (
 	router "go.lumeweb.com/portal-router"
 	"go.lumeweb.com/portal/config"
 	"go.lumeweb.com/portal/core"
+	portalservice "go.lumeweb.com/portal/service"
+	"go.uber.org/zap"
 )
 
 var _ core.API = (*API)(nil)
@@ -84,6 +87,15 @@ func NewAPI() (core.API, []core.ContextBuilderOption, error) {
 				Scopes:      api.scopes,
 				DisplayName: "Portal MCP Server",
 			}); err != nil {
+				// MCP is unusable without OAuth. When the provider is disabled
+				// (oauth.enabled=false) fail closed: skip registration and let
+				// the OAuth middleware deny all MCP requests, rather than taking
+				// down the whole portal.
+				if errors.Is(err, portalservice.ErrOAuthDisabled) {
+					ctx.Logger().Warn("mcp: oauth provider disabled; MCP endpoint unavailable",
+						zap.Error(err))
+					return nil
+				}
 				return fmt.Errorf("mcp: register resource: %w", err)
 			}
 
