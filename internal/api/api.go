@@ -127,20 +127,22 @@ func NewAPI() (core.API, []core.ContextBuilderOption, error) {
 
 			// Read the resource back to confirm registration landed, so a
 			// provider-side ordering or registry issue is visible at boot
-			// rather than surfacing later as a 404 on the PRM endpoint.
+			// rather than surfacing later as a 404 on the PRM endpoint. A
+			// read-back failure is logged, not fatal: registration already
+			// succeeded and the portal must keep serving.
 			reg, err := api.oauthSvc.GetResource(ctx, api.resourceURL)
 			if err != nil {
 				ctx.Logger().Error("mcp: failed to read back registered resource",
 					zap.Error(err), zap.String("resource_url", api.resourceURL))
-				return fmt.Errorf("mcp: read back resource: %w", err)
-			}
-			ctx.Logger().Info("mcp: protected resource registered",
-				zap.String("resource_url", api.resourceURL),
-				zap.Bool("visible", reg != nil),
-				zap.Strings("scopes", api.scopes))
-			if reg == nil {
-				ctx.Logger().Error("mcp: protected resource not visible after registration",
-					zap.String("resource_url", api.resourceURL))
+			} else {
+				ctx.Logger().Info("mcp: protected resource registered",
+					zap.String("resource_url", api.resourceURL),
+					zap.Bool("visible", reg != nil),
+					zap.Strings("scopes", api.scopes))
+				if reg == nil {
+					ctx.Logger().Error("mcp: protected resource not visible after registration",
+						zap.String("resource_url", api.resourceURL))
+				}
 			}
 
 			return nil
