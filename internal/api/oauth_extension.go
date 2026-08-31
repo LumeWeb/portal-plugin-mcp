@@ -12,6 +12,7 @@ import (
 	"go.lumeweb.com/portal-plugin-mcp/internal"
 	router "go.lumeweb.com/portal-router"
 	"go.lumeweb.com/portal/core"
+	"go.uber.org/zap"
 )
 
 var _ core.APIExtension = (*OAuthExtension)(nil)
@@ -28,6 +29,10 @@ type OAuthExtension struct {
 	// baseURL is the dashboard API's public base URL. It is the issuer of the
 	// authorization server and the prefix of every OAuth endpoint.
 	baseURL string
+	// logger logs OAuth authorization-server events at debug level. It is a
+	// named child of the context logger, set during startup. A nil logger is a
+	// no-op.
+	logger *zap.Logger
 }
 
 // NewOAuthExtension creates a dashboard API extension serving the MCP OAuth
@@ -47,6 +52,7 @@ func NewOAuthExtension() core.APIExtensionFactory {
 			if ext.baseURL == "" {
 				ext.baseURL = ctx.Config().Config().Core.Domain
 			}
+			ext.logger = ctx.Logger().Named("mcp.oauth")
 			return nil
 		})), nil
 	}
@@ -224,4 +230,12 @@ func sameOrigin(baseURL, origin string) bool {
 // ID returns a stable identifier for this extension.
 func (e *OAuthExtension) ID() string {
 	return internal.PluginName + ".oauth_extension"
+}
+
+// logDebug emits a debug log entry if a logger is configured, else no-ops.
+func (e *OAuthExtension) logDebug(msg string, fields ...zap.Field) {
+	if e.logger == nil {
+		return
+	}
+	e.logger.Debug(msg, fields...)
 }

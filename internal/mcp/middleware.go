@@ -11,6 +11,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"go.lumeweb.com/portal/core"
+	"go.uber.org/zap"
 )
 
 // Middleware gates the MCP streamable-HTTP endpoint with OAuth bearer-token
@@ -32,6 +33,18 @@ type Middleware struct {
 	// requiredScopes are the scopes a token must carry to access the MCP
 	// endpoint. Missing scopes are rejected with 403 (insufficient_scope).
 	requiredScopes []string
+
+	// logger logs authorization decisions at debug level. It defaults to nil
+	// (no-op) and can be replaced via WithLogger. Debug events only surface
+	// when the portal log level includes Debug.
+	logger *zap.Logger
+}
+
+// WithLogger sets the logger the middleware uses for authorization-decision
+// debug events. A nil logger is a no-op.
+func (mw *Middleware) WithLogger(l *zap.Logger) *Middleware {
+	mw.logger = l
+	return mw
 }
 
 // NewMiddleware builds an OAuth bearer middleware backed by the portal's
@@ -60,6 +73,7 @@ func (mw *Middleware) Protect(next http.Handler) http.Handler {
 		// OAuth provider disabled or unavailable; deny everything rather than
 		// serving MCP without authorization.
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mw.logDebug("oauth provider disabled; MCP endpoint unavailable")
 			deny(w, mw.metadataURL(), "the OAuth provider is not enabled")
 		})
 	}
@@ -67,14 +81,22 @@ func (mw *Middleware) Protect(next http.Handler) http.Handler {
 	verifier := func(ctx context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
 		vt, ok := mw.oauthSvc.ValidateAccessTokenInfo(ctx, token)
 		if !ok {
+			mw.logDebug("access token rejected: unknown or expired")
 			return nil, fmt.Errorf("%w: the access token is unknown or has expired", auth.ErrInvalidToken)
 		}
 		// RFC 8707 audience binding: reject tokens minted for any resource other
 		// than this MCP server, so a token issued for a sibling resource cannot
 		// be replayed against MCP.
 		if mw.resourceURL != "" && vt.Resource != mw.resourceURL {
+			mw.logDebug("access token rejected: issued for a different resource",
+				zap.String("token_resource", vt.Resource),
+				zap.String("expected_resource", mw.resourceURL))
 			return nil, fmt.Errorf("%w: the access token was issued for a different resource", auth.ErrInvalidToken)
 		}
+		mw.logDebug("access token authorized",
+			zap.Uint64("user_id", uint64(vt.UserID)),
+			zap.String("resource", vt.Resource),
+			zap.String("scope", vt.Scope))
 		return &auth.TokenInfo{
 			// The SDK enforces mw.requiredScopes against this grant (RFC 6749 §5.2).
 			Scopes:     strings.Fields(vt.Scope),
@@ -94,12 +116,32 @@ func (mw *Middleware) Protect(next http.Handler) http.Handler {
 	})(next)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		protected.ServeHTTP(&oauthChallengeWriter{
+		writer := &oauthChallengeWriter{
 			ResponseWriter:   w,
 			metadataURL:      mw.metadataURL(),
 			errorDescription: "the access token is invalid, expired, or has been revoked",
-		}, r)
+		}
+		protected.ServeHTTP(writer, r)
+		switch writer.status {
+		case http.StatusForbidden:
+			// The go-sdk returned 403 for insufficient scope (RFC 6749 §5.2).
+			mw.logDebug("request denied: insufficient scope", zap.String("method", r.Method), zap.String("path", r.URL.Path))
+		case http.StatusUnauthorized:
+			if writer.upgraded {
+				// A genuine bearer failure (missing/invalid/expired/wrong-resource
+				// token) upgraded into a full RFC 6750 invalid_token challenge.
+				mw.logDebug("request denied: invalid or missing bearer token", zap.String("method", r.Method), zap.String("path", r.URL.Path))
+			}
+		}
 	})
+}
+
+// logDebug emits a debug log entry if a logger is configured, else no-ops.
+func (mw *Middleware) logDebug(msg string, fields ...zap.Field) {
+	if mw.logger == nil {
+		return
+	}
+	mw.logger.Debug(msg, fields...)
 }
 
 // metadataURL returns the RFC 9728 protected-resource metadata URL served by
