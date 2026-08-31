@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,11 +13,32 @@ import (
 	coreTesting "go.lumeweb.com/portal/core/testing"
 )
 
-func TestMCPHealthz(t *testing.T) {
+// TestMCPEndpointCORSPreflight guards the OPTIONS route that replaced the
+// previous echoRouter.Any (which served CORS preflight). Cross-origin browser
+// MCP clients send OPTIONS before their POST/GET; without a matching route the
+// server would 405 and break them.
+func TestMCPEndpointCORSPreflight(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
-		rec := request(t, ctx, http.MethodGet, "/healthz", nil)
-		require.Equal(t, http.StatusOK, rec.Code)
-		require.Equal(t, `{"ok":true}`, rec.Body.String())
+		req := ctx.NewAPIRequest(http.MethodOptions, "/mcp", nil)
+		req.Header.Set("Origin", "http://localhost:5173")
+		req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+		// The shared CORS middleware requires the requested non-simple headers
+		// in lexicographic order (what Chromium sends for CORS preflight).
+		req.Header.Set("Access-Control-Request-Headers",
+			"authorization, content-type, mcp-method, mcp-name, mcp-protocol-version")
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		// The key regression: preflight is answered (204), not 405, and every
+		// header a conforming stateless MCP client sends (the MCP protocol
+		// headers plus the OAuth bearer Authorization) is allowed.
+		require.Equal(t, http.StatusNoContent, rec.Code)
+		require.Contains(t, rec.Header().Get("Access-Control-Allow-Methods"), http.MethodPost)
+		require.Equal(t, "http://localhost:5173", rec.Header().Get("Access-Control-Allow-Origin"))
+		allowHeaders := strings.ToLower(rec.Header().Get("Access-Control-Allow-Headers"))
+		for _, h := range []string{"authorization", "content-type", "mcp-method", "mcp-name", "mcp-protocol-version"} {
+			require.Contains(t, allowHeaders, h)
+		}
 	}, getMCPAPITestOptions())
 }
 

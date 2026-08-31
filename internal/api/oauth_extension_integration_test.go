@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/oauth"
 	coreTesting "go.lumeweb.com/portal/core/testing"
+	portalservice "go.lumeweb.com/portal/service"
 )
 
 func TestOAuthMetadataRewritesEndpoints(t *testing.T) {
@@ -29,6 +30,19 @@ func TestOAuthMetadataRewritesEndpoints(t *testing.T) {
 		require.Contains(t, body, "/api/auth/oauth/token")
 		require.Contains(t, body, "/api/auth/oauth/register")
 		require.NotContains(t, strings.TrimSuffix(body, "\n"), `"authorization_endpoint":"dashboard.example.com/oauth/authorize`)
+	}, getOAuthExtensionTestOptions())
+}
+
+// TestOAuthMetadataDisabledProvider verifies that when the portal OAuth
+// provider is disabled, the authorization-server metadata endpoint reports the
+// AS as unavailable instead of leaking a generic 500 server_error.
+func TestOAuthMetadataDisabledProvider(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		oauthExt(ctx).EXPECT().Metadata(mock.Anything).Return(nil, portalservice.ErrOAuthDisabled)
+
+		rec := request(t, ctx, http.MethodGet, "/.well-known/oauth-authorization-server", nil)
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		require.Contains(t, rec.Body.String(), "authorization_server_unavailable")
 	}, getOAuthExtensionTestOptions())
 }
 
