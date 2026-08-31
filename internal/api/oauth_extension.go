@@ -1,0 +1,181 @@
+package api
+
+import (
+	"net/http"
+
+	"github.com/labstack/echo/v4"
+	"go.lumeweb.com/oauth"
+	"go.lumeweb.com/portal-middleware/auth/jwt"
+	"go.lumeweb.com/portal-middleware/middleware"
+	"go.lumeweb.com/portal-plugin-mcp/internal"
+	router "go.lumeweb.com/portal-router"
+	"go.lumeweb.com/portal/core"
+)
+
+var _ core.APIExtension = (*OAuthExtension)(nil)
+
+// OAuthExtension extends the dashboard API with the OAuth 2.1 authorization-
+// server endpoints for MCP clients. The authorization, token, and registration
+// endpoints are served under /api/auth/oauth/* on the dashboard subdomain, so
+// resource owners authenticate with their portal credentials and MCP clients
+// complete the OAuth authorization-code flow against the portal's own IdP.
+type OAuthExtension struct {
+	*core.BaseComponent
+	oauthSvc core.OAuthProviderService
+	authSvc  core.AuthService
+	// baseURL is the dashboard API's public base URL. It is the issuer of the
+	// authorization server and the prefix of every OAuth endpoint.
+	baseURL string
+}
+
+// NewOAuthExtension creates a dashboard API extension serving the MCP OAuth
+// endpoints.
+func NewOAuthExtension() core.APIExtensionFactory {
+	return func() (core.APIExtension, []core.ContextBuilderOption, error) {
+		ext := &OAuthExtension{}
+
+		return ext, core.ContextOptions(core.ContextWithStartupFunc(func(ctx core.Context) error {
+			httpSvc := core.GetService[core.HTTPService](ctx, core.HTTP_SERVICE)
+
+			// GetService fails fast (Fatal) when a required service is missing.
+			ext.oauthSvc = core.GetService[core.OAuthProviderService](ctx, core.OAUTH_PROVIDER_SERVICE)
+			ext.authSvc = core.GetService[core.AuthService](ctx, core.AUTH_SERVICE)
+
+			ext.baseURL = httpSvc.APISubdomain(ext.TargetAPI(), true)
+			if ext.baseURL == "" {
+				ext.baseURL = ctx.Config().Config().Core.Domain
+			}
+			return nil
+		})), nil
+	}
+}
+
+// TargetAPI returns the dashboard API that this extension extends.
+func (e *OAuthExtension) TargetAPI() string {
+	return "dashboard"
+}
+
+// Configure mounts the OAuth authorization-server endpoints on the dashboard
+// API. The metadata, token, and register endpoints are OAuth protocol
+// endpoints called directly by MCP clients and are intentionally left without
+// a portal access policy. The authorize endpoints are gated by the portal's
+// JWT middleware so the resource owner must be signed in to approve a MCP
+// client (see handleAuthorizeGET redirect to /app-login).
+func (e *OAuthExtension) Configure(gRouter router.Router, accessSvc core.AccessService) error {
+	subdomain := core.GetAPI(e.TargetAPI()).Subdomain()
+
+	// GET allows empty auth so unauthenticated resource owners can be
+	// redirected to /app-login; POST requires an authenticated user to
+	// approve/reject.
+	authorizeGETAuth := middleware.AuthMiddleware(e.Context(),
+		middleware.WithAuthPurpose(jwt.PurposeLogin),
+		middleware.WithAuthEmptyAllowed(true),
+	)
+	authorizePOSTAuth := middleware.AuthMiddleware(e.Context(),
+		middleware.WithAuthPurpose(jwt.PurposeLogin),
+	)
+
+	// Shared OAuth query/header documentation for the authorize endpoints.
+	authorizeQueryParams := []router.SwaggerOption{
+		router.WithQueryParam("response_type", "Authorization flow response type; must be \"code\"", "code"),
+		router.WithQueryParam("client_id", "The registered OAuth client identifier", "client_abc"),
+		router.WithQueryParam("redirect_uri", "The client redirect URI", "http://127.0.0.1:51732/callback"),
+		router.WithQueryParam("state", "Opaque state echoed back to the client", "xyz"),
+		router.WithQueryParam("code_challenge", "PKCE code challenge (RFC 7636)", "abc"),
+		router.WithQueryParam("code_challenge_method", "PKCE challenge method; must be \"S256\"", "S256"),
+		router.WithQueryParam("resource", "The MCP server resource being requested (RFC 8707)", "https://mcp.example.com/mcp"),
+		router.WithQueryParam("scope", "Requested scopes", "offline_access"),
+	}
+
+	metadataSwagger := router.WithSwagger(
+		router.WithSummary("OAuth Authorization Server Metadata"),
+		router.WithDescription("RFC 8414 authorization server metadata document used by MCP clients for endpoint discovery."),
+		router.WithTags("MCP OAuth"),
+		router.WithSuccessResponse(http.StatusOK, "Authorization server metadata", router.WithJSONContent(oauth.ASMetadata{})),
+	)
+
+	authorizeGetSwagger := router.WithSwagger(append([]router.SwaggerOption{
+		router.WithSummary("Authorize MCP Client"),
+		router.WithDescription("Renders the OAuth consent page for an authenticated resource owner, or redirects unauthenticated users to the portal login. Submitting the page issues an authorization code."),
+		router.WithTags("MCP OAuth"),
+		router.WithSuccessResponse(http.StatusOK, "Consent page (text/html)"),
+	}, authorizeQueryParams...)...)
+
+	authorizePostSwagger := router.WithSwagger(append([]router.SwaggerOption{
+		router.WithSummary("Approve MCP Client Authorization"),
+		router.WithDescription("Issues an authorization code when the resource owner approves, returning the client redirect URI. Called by the consent page."),
+		router.WithTags("MCP OAuth"),
+		router.WithRequestBody(OAuthApproveRequest{}, "Approve or reject the request", true),
+		router.WithSuccessResponse(http.StatusOK, "Final client redirect URI", router.WithJSONContent(OAuthRedirectResponse{})),
+		router.WithErrorResponses(router.DefineSwaggerErrorResponses(
+			router.DefineSwaggerErrorResponse(http.StatusBadRequest, "Invalid authorization request"),
+		)),
+	}, authorizeQueryParams...)...)
+
+	tokenSwagger := router.WithSwagger(
+		router.WithSummary("OAuth Token"),
+		router.WithDescription("Exchanges an authorization code for tokens, or rotates a refresh token (RFC 6749 §5). Form-encoded body."),
+		router.WithTags("MCP OAuth"),
+		router.WithRequestBody(OAuthTokenRequest{}, "grant_type of authorization_code or refresh_token plus the relevant fields", true),
+		router.WithSuccessResponse(http.StatusOK, "Token response", router.WithJSONContent(oauth.TokenResponse{})),
+		router.WithErrorResponses(router.DefineSwaggerErrorResponses(
+			router.DefineSwaggerErrorResponse(http.StatusBadRequest, "RFC 6749 §5.2 error response"),
+		)),
+	)
+
+	registerSwagger := router.WithSwagger(
+		router.WithSummary("Register MCP OAuth Client"),
+		router.WithDescription("Registers a dynamic public OAuth client (RFC 7591 §3.1) and returns its client_id."),
+		router.WithTags("MCP OAuth"),
+		router.WithRequestBody(OAuthRegisterRequest{}, "Client registration metadata", true),
+		router.WithSuccessResponse(http.StatusCreated, "Registered client", router.WithJSONContent(OAuthClientResponse{})),
+		router.WithErrorResponses(router.DefineSwaggerErrorResponses(
+			router.DefineSwaggerErrorResponse(http.StatusBadRequest, "Invalid client metadata"),
+		)),
+	)
+
+	routes := router.DefineRoutes(
+		// RFC 8414 authorization-server metadata. Served on the dashboard
+		// subdomain because that is the OAuth issuer for the portal.
+		router.NewRoute(http.MethodGet, "/.well-known/oauth-authorization-server",
+			httpHandler(e.handleASMetadata),
+			metadataSwagger,
+			router.WithCors(),
+		),
+		// Authorization endpoint (RFC 6749 §4.1.1): GET renders the consent
+		// page, POST issues the authorization code after the authenticated
+		// resource owner approves.
+		router.NewRoute(http.MethodGet, "/api/auth/oauth/authorize", e.handleAuthorizeGET,
+			authorizeGetSwagger,
+			router.WithMiddlewares(authorizeGETAuth),
+			router.WithCors(),
+		),
+		router.NewRoute(http.MethodPost, "/api/auth/oauth/authorize", e.handleAuthorizePOST,
+			authorizePostSwagger,
+			router.WithMiddlewares(authorizePOSTAuth),
+			router.WithCors(),
+		),
+		// Token endpoint (RFC 6749 §5): code exchange + refresh token grant.
+		router.NewRoute(http.MethodPost, "/api/auth/oauth/token", httpHandler(e.handleToken),
+			tokenSwagger,
+			router.WithCors(),
+		),
+		// Dynamic client registration (RFC 7591 §3.1).
+		router.NewRoute(http.MethodPost, "/api/auth/oauth/register", httpHandler(e.handleRegister),
+			registerSwagger,
+			router.WithCors(),
+		),
+	)
+
+	return router.RegisterRoutes(gRouter, accessSvc, subdomain, routes)
+}
+
+// httpHandler adapts an http.HandlerFunc into an echo.HandlerFunc.
+func httpHandler(h http.HandlerFunc) echo.HandlerFunc {
+	return echo.WrapHandler(h)
+}
+
+// ID returns a stable identifier for this extension.
+func (e *OAuthExtension) ID() string {
+	return internal.PluginName + ".oauth_extension"
+}
