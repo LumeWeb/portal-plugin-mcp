@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,13 +22,21 @@ func TestMCPEndpointCORSPreflight(t *testing.T) {
 		req := ctx.NewAPIRequest(http.MethodOptions, "/mcp", nil)
 		req.Header.Set("Origin", "http://localhost:5173")
 		req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+		// The shared CORS middleware requires the requested non-simple headers
+		// in lexicographic order (what Chromium sends for CORS preflight).
+		req.Header.Set("Access-Control-Request-Headers", "authorization, content-type")
 		rec := httptest.NewRecorder()
 		ctx.Router().ServeHTTP(rec, req)
 
-		// The key regression: preflight is answered (204), not 405.
+		// The key regression: preflight is answered (204), not 405, and the
+		// MCP client's Authorization (bearer) header is allowed for the actual
+		// POST/GET.
 		require.Equal(t, http.StatusNoContent, rec.Code)
 		require.Contains(t, rec.Header().Get("Access-Control-Allow-Methods"), http.MethodPost)
 		require.Equal(t, "http://localhost:5173", rec.Header().Get("Access-Control-Allow-Origin"))
+		allowHeaders := strings.ToLower(rec.Header().Get("Access-Control-Allow-Headers"))
+		require.Contains(t, allowHeaders, "authorization")
+		require.Contains(t, allowHeaders, "content-type")
 	}, getMCPAPITestOptions())
 }
 
