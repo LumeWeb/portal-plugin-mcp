@@ -5,13 +5,6 @@ import (
 	"net/http"
 )
 
-// healthzHandler is the unauthenticated liveness probe used by orchestrators.
-// It is deliberately outside the OAuth guards.
-func healthzHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"ok":true}`))
-}
-
 // writeJSON writes v as JSON with the given status code.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

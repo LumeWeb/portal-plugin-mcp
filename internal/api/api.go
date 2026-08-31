@@ -153,23 +153,48 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 		return fmt.Errorf("mcp: build hosted server: %w", err)
 	}
 
-	echoRouter := router.GetRouter(gRouter)
-	if echoRouter == nil {
-		return fmt.Errorf("mcp: underlying echo router is nil")
-	}
-
+	// The MCP routes are registered through the portal router so they are
+	// tracked by the gswagger stack and appear in /swagger.json, while the
+	// handlers still forward into the embedded hosted MCP server. The portal
+	// router's default access role is not attached: /mcp enforces its own
+	// OAuth bearer gate at the handler level, and the metadata route is
+	// public.
+	//
 	// The MCP streamable-HTTP endpoint accepts GET and POST on the same path.
-	echoRouter.Any(a.resourcePath, echo.WrapHandler(handler))
+	mcpHandler := echo.WrapHandler(handler)
+	routes := router.DefineRoutes(
+		router.NewRoute(http.MethodGet, a.resourcePath, mcpHandler,
+			router.WithAccess(""),
+			router.WithSwagger(
+				router.WithSummary("MCP streamable HTTP endpoint (GET)"),
+				router.WithDescription("Model Context Protocol endpoint backed by the hosted pinner MCP server."),
+				router.WithTags("MCP"),
+			),
+		),
+		router.NewRoute(http.MethodPost, a.resourcePath, mcpHandler,
+			router.WithAccess(""),
+			router.WithSwagger(
+				router.WithSummary("MCP streamable HTTP endpoint (POST)"),
+				router.WithDescription("Model Context Protocol endpoint backed by the hosted pinner MCP server."),
+				router.WithTags("MCP"),
+			),
+		),
+		// RFC 9728 protected-resource metadata; MCP clients discover the
+		// authorization server from this document. The RFC 8414 authorization-
+		// server metadata is served by the dashboard API extension at the issuer
+		// URL.
+		router.NewRoute(http.MethodGet, "/.well-known/oauth-protected-resource",
+			echo.WrapHandler(a.protectedResourceHandler()),
+			router.WithAccess(""),
+			router.WithSwagger(
+				router.WithSummary("OAuth protected-resource metadata"),
+				router.WithDescription("RFC 9728 protected-resource metadata describing the MCP server resource."),
+				router.WithTags("MCP"),
+			),
+		),
+	)
 
-	// RFC 9728 protected-resource metadata; MCP clients discover the
-	// authorization server from this document. The RFC 8414 authorization-
-	// server metadata is served by the dashboard API extension at the issuer
-	// URL.
-	echoRouter.GET("/.well-known/oauth-protected-resource", echo.WrapHandler(a.protectedResourceHandler()))
-
-	echoRouter.GET("/healthz", echo.WrapHandler(http.HandlerFunc(healthzHandler)))
-
-	return nil
+	return router.RegisterRoutes(gRouter, accessSvc, a.Subdomain(), routes)
 }
 
 // protectedResourceHandler returns RFC 9728 protected-resource metadata for

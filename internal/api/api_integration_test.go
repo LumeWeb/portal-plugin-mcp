@@ -12,14 +12,6 @@ import (
 	coreTesting "go.lumeweb.com/portal/core/testing"
 )
 
-func TestMCPHealthz(t *testing.T) {
-	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
-		rec := request(t, ctx, http.MethodGet, "/healthz", nil)
-		require.Equal(t, http.StatusOK, rec.Code)
-		require.Equal(t, `{"ok":true}`, rec.Body.String())
-	}, getMCPAPITestOptions())
-}
-
 func TestMCPProtectedResourceMetadata(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		mcpOAuth(ctx).EXPECT().ProtectedResourceMetadata(mock.Anything, mock.Anything).

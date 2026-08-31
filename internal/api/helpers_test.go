@@ -8,15 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHealthzHandler(t *testing.T) {
-	rec := httptest.NewRecorder()
-	healthzHandler(rec, nil)
-
-	require.Equal(t, 200, rec.Code)
-	require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-	require.Equal(t, `{"ok":true}`, rec.Body.String())
-}
-
 func TestWriteJSON(t *testing.T) {
 	rec := httptest.NewRecorder()
 	writeJSON(rec, 201, map[string]string{"x": "y"})

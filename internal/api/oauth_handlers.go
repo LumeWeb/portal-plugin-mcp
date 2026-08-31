@@ -12,6 +12,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"go.lumeweb.com/oauth"
 	mcontext "go.lumeweb.com/portal-middleware/context"
+	portalservice "go.lumeweb.com/portal/service"
 )
 
 // consentPageData carries the data rendered into the OAuth consent page.
@@ -65,6 +66,14 @@ func oauthReqFromValues(q url.Values) oauth.AuthorizeRequest {
 func (e *OAuthExtension) handleASMetadata(w http.ResponseWriter, r *http.Request) {
 	meta, err := e.oauthSvc.Metadata(r.Context())
 	if err != nil {
+		// When the OAuth provider is disabled (oauth.enabled=false) the
+		// authorization server is never initialized, so there is no metadata
+		// document to advertise. Mirror the MCP fail-closed behavior and
+		// respond 404 rather than a misleading generic 500.
+		if errors.Is(err, portalservice.ErrOAuthDisabled) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "authorization_server_unavailable"})
+			return
+		}
 		writeServerError(w)
 		return
 	}
