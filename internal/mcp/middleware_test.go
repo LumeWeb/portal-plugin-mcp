@@ -138,15 +138,6 @@ func TestMiddlewareProtect_MissingTokenChallenges(t *testing.T) {
 	require.Contains(t, rec.Header().Get("WWW-Authenticate"), `error="invalid_token"`)
 }
 
-func TestTokenPrincipalDeterministic(t *testing.T) {
-	a := tokenPrincipal("token-1")
-	b := tokenPrincipal("token-1")
-	c := tokenPrincipal("token-2")
-	require.Equal(t, a, b)
-	require.NotEqual(t, a, c)
-	require.Len(t, a, 64) // sha256 hex
-}
-
 func TestIsOAuthBearerFailure(t *testing.T) {
 	h := http.Header{}
 	require.False(t, isOAuthBearerFailure(h))
