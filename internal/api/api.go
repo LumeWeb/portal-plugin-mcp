@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/portal-plugin-mcp/internal"
 	pluginConfig "go.lumeweb.com/portal-plugin-mcp/internal/config"
 	"go.lumeweb.com/portal-plugin-mcp/internal/mcp"
+	"go.lumeweb.com/portal-middleware/cors"
 	router "go.lumeweb.com/portal-router"
 	"go.lumeweb.com/portal/config"
 	"go.lumeweb.com/portal/core"
@@ -165,11 +166,16 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 	// complete the OAuth authorization-code redirect and talk to the server;
 	// the OPTIONS route answers CORS preflight (the CORS middleware
 	// short-circuits it), which the previous echoRouter.Any used to serve.
+	// A bespoke config allows the headers a conforming stateless MCP client is
+	// required to send (MCP-Protocol-Version, Mcp-Method, Mcp-Name) plus the
+	// bearer Authorization header used by the OAuth gate; the portal default
+	// only permits Content-Type and Authorization, which would fail preflight.
+	mcpCORS := mcpCORSConfig()
 	mcpHandler := echo.WrapHandler(handler)
 	routes := router.DefineRoutes(
 		router.NewRoute(http.MethodGet, a.resourcePath, mcpHandler,
 			router.WithAccess(""),
-			router.WithCors(),
+			router.WithCors(mcpCORS),
 			router.WithSwagger(
 				router.WithSummary("MCP streamable HTTP endpoint (GET)"),
 				router.WithDescription("Model Context Protocol endpoint backed by the hosted pinner MCP server."),
@@ -178,7 +184,7 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 		),
 		router.NewRoute(http.MethodPost, a.resourcePath, mcpHandler,
 			router.WithAccess(""),
-			router.WithCors(),
+			router.WithCors(mcpCORS),
 			router.WithSwagger(
 				router.WithSummary("MCP streamable HTTP endpoint (POST)"),
 				router.WithDescription("Model Context Protocol endpoint backed by the hosted pinner MCP server."),
@@ -189,7 +195,7 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 		router.NewRoute(http.MethodOptions, a.resourcePath,
 			func(c echo.Context) error { return c.NoContent(http.StatusNoContent) },
 			router.WithAccess(""),
-			router.WithCors(),
+			router.WithCors(mcpCORS),
 			router.WithSwagger(
 				router.WithSummary("MCP streamable HTTP endpoint (CORS preflight)"),
 				router.WithDescription("Answers CORS preflight for cross-origin MCP clients."),
@@ -212,6 +218,34 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 	)
 
 	return router.RegisterRoutes(gRouter, accessSvc, a.Subdomain(), routes)
+}
+
+// mcpCORSConfig returns the CORS policy for the /mcp endpoint. It allows the
+// headers that conforming stateless MCP HTTP clients must send on every POST
+// (MCP-Protocol-Version, Mcp-Method, Mcp-Name) in addition to the bearer
+// Authorization header used by the OAuth gate, on the GET/POST/OPTIONS methods
+// the endpoint serves. Browsers discard the request if preflight omits any of
+// these.
+func mcpCORSConfig() cors.Config {
+	return cors.Config{
+		AllowedMethods: []string{
+			http.MethodGet,
+			http.MethodPost,
+			http.MethodOptions,
+		},
+		AllowedHeaders: []string{
+			"Content-Type",
+			"Authorization",
+			"MCP-Protocol-Version",
+			"Mcp-Method",
+			"Mcp-Name",
+		},
+		// Accept any origin and reflect the requesting Origin back (never the
+		// literal "*"), so cross-origin bearer credentials are allowed. This
+		// mirrors the portal's default CORS behavior.
+		AllowOriginFunc:  func(string) bool { return true },
+		AllowCredentials: true,
+	}
 }
 
 // protectedResourceHandler returns RFC 9728 protected-resource metadata for

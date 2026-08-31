@@ -24,19 +24,21 @@ func TestMCPEndpointCORSPreflight(t *testing.T) {
 		req.Header.Set("Access-Control-Request-Method", http.MethodPost)
 		// The shared CORS middleware requires the requested non-simple headers
 		// in lexicographic order (what Chromium sends for CORS preflight).
-		req.Header.Set("Access-Control-Request-Headers", "authorization, content-type")
+		req.Header.Set("Access-Control-Request-Headers",
+			"authorization, content-type, mcp-method, mcp-name, mcp-protocol-version")
 		rec := httptest.NewRecorder()
 		ctx.Router().ServeHTTP(rec, req)
 
-		// The key regression: preflight is answered (204), not 405, and the
-		// MCP client's Authorization (bearer) header is allowed for the actual
-		// POST/GET.
+		// The key regression: preflight is answered (204), not 405, and every
+		// header a conforming stateless MCP client sends (the MCP protocol
+		// headers plus the OAuth bearer Authorization) is allowed.
 		require.Equal(t, http.StatusNoContent, rec.Code)
 		require.Contains(t, rec.Header().Get("Access-Control-Allow-Methods"), http.MethodPost)
 		require.Equal(t, "http://localhost:5173", rec.Header().Get("Access-Control-Allow-Origin"))
 		allowHeaders := strings.ToLower(rec.Header().Get("Access-Control-Allow-Headers"))
-		require.Contains(t, allowHeaders, "authorization")
-		require.Contains(t, allowHeaders, "content-type")
+		for _, h := range []string{"authorization", "content-type", "mcp-method", "mcp-name", "mcp-protocol-version"} {
+			require.Contains(t, allowHeaders, h)
+		}
 	}, getMCPAPITestOptions())
 }
 
