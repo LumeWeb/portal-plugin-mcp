@@ -8,6 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"go.lumeweb.com/portal-middleware/auth/jwt"
+	"go.uber.org/zap"
 )
 
 // ErrNotAuthenticated is returned by CredentialResolver.TokenForRequest when
@@ -33,6 +34,17 @@ type CredentialResolver struct {
 	privateKey ed25519.PrivateKey
 	domain     string
 	ttl        time.Duration
+
+	// logger logs per-request credential minting at debug level. It defaults to
+	// nil (no-op) and can be replaced via WithLogger.
+	logger *zap.Logger
+}
+
+// WithLogger sets the logger the resolver uses for credential-resolution debug
+// events. A nil logger is a no-op.
+func (r *CredentialResolver) WithLogger(l *zap.Logger) *CredentialResolver {
+	r.logger = l
+	return r
 }
 
 // NewCredentialResolver builds a CredentialResolver that mints PurposeAPI JWTs
@@ -49,7 +61,17 @@ func NewCredentialResolver(privateKey ed25519.PrivateKey, domain string, ttl tim
 func (r *CredentialResolver) TokenForRequest(ctx context.Context) (string, error) {
 	ti := auth.TokenInfoFromContext(ctx)
 	if ti == nil || ti.UserID == "" {
+		r.logDebug("no authenticated caller; falling back to config-token source")
 		return "", ErrNotAuthenticated
 	}
+	r.logDebug("minted per-user Portal API JWT", zap.String("user_id", ti.UserID))
 	return jwt.CreateToken(r.privateKey, r.domain, ti.UserID, jwt.PurposeAPI, r.ttl)
+}
+
+// logDebug emits a debug log entry if a logger is configured, else no-ops.
+func (r *CredentialResolver) logDebug(msg string, fields ...zap.Field) {
+	if r.logger == nil {
+		return
+	}
+	r.logger.Debug(msg, fields...)
 }

@@ -13,6 +13,7 @@ import (
 	"go.lumeweb.com/oauth"
 	mcontext "go.lumeweb.com/portal-middleware/context"
 	portalservice "go.lumeweb.com/portal/service"
+	"go.uber.org/zap"
 )
 
 // consentPageData carries the data rendered into the OAuth consent page.
@@ -71,12 +72,15 @@ func (e *OAuthExtension) handleASMetadata(w http.ResponseWriter, r *http.Request
 		// document to advertise. Mirror the MCP fail-closed behavior and
 		// respond 404 rather than a misleading generic 500.
 		if errors.Is(err, portalservice.ErrOAuthDisabled) {
+			e.logDebug("authorization-server metadata unavailable: oauth provider disabled")
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "authorization_server_unavailable"})
 			return
 		}
+		e.logDebug("failed to build authorization-server metadata", zap.Error(err))
 		writeServerError(w)
 		return
 	}
+	e.logDebug("serving authorization-server metadata")
 	base := strings.TrimRight(e.baseURL, "/")
 	meta.AuthorizationEndpoint = base + "/api/auth/oauth/authorize"
 	meta.TokenEndpoint = base + "/api/auth/oauth/token"
@@ -92,12 +96,24 @@ func (e *OAuthExtension) handleASMetadata(w http.ResponseWriter, r *http.Request
 func (e *OAuthExtension) handleAuthorizeGET(c echo.Context) error {
 	req := oauthReqFromValues(c.QueryParams())
 	if err := e.oauthSvc.ValidateAuthorizeRequest(c.Request().Context(), req); err != nil {
+		e.logDebug("authorize GET rejected",
+			zap.String("client_id", req.ClientID),
+			zap.String("resource", req.Resource),
+			zap.Error(err))
 		return unprocessable(c, err.Error())
 	}
 
 	if _, err := mcontext.GetUserID(c); err != nil {
+		e.logDebug("unauthenticated resource owner redirected to login",
+			zap.String("client_id", req.ClientID),
+			zap.String("resource", req.Resource))
 		return e.redirectToLogin(c, req.ClientID)
 	}
+
+	e.logDebug("rendering consent page",
+		zap.String("client_id", req.ClientID),
+		zap.String("resource", req.Resource),
+		zap.String("scope", req.Scope))
 
 	c.Response().Header().Set("Content-Type", "text/html; charset=utf-8")
 	return consentTemplate.ExecuteTemplate(c.Response().Writer, "consent", layoutData{
@@ -119,6 +135,10 @@ func (e *OAuthExtension) handleAuthorizeGET(c echo.Context) error {
 func (e *OAuthExtension) handleAuthorizePOST(c echo.Context) error {
 	req := oauthReqFromValues(c.QueryParams())
 	if err := e.oauthSvc.ValidateAuthorizeRequest(c.Request().Context(), req); err != nil {
+		e.logDebug("authorize POST rejected",
+			zap.String("client_id", req.ClientID),
+			zap.String("resource", req.Resource),
+			zap.Error(err))
 		return unprocessable(c, err.Error())
 	}
 
@@ -133,6 +153,10 @@ func (e *OAuthExtension) handleAuthorizePOST(c echo.Context) error {
 	}
 
 	if !body.Approve {
+		e.logDebug("resource owner denied authorization",
+			zap.String("client_id", req.ClientID),
+			zap.String("resource", req.Resource),
+			zap.Uint64("user_id", uint64(userID)))
 		return c.JSON(http.StatusOK, OAuthRedirectResponse{
 			RedirectURI: buildRedirectURI(req, url.Values{"error": {"access_denied"}}),
 		})
@@ -140,8 +164,18 @@ func (e *OAuthExtension) handleAuthorizePOST(c echo.Context) error {
 
 	code, err := e.oauthSvc.IssueAuthorizationCode(c.Request().Context(), req, userID)
 	if err != nil {
+		e.logDebug("failed to issue authorization code",
+			zap.String("client_id", req.ClientID),
+			zap.String("resource", req.Resource),
+			zap.Uint64("user_id", uint64(userID)),
+			zap.Error(err))
 		return unprocessable(c, err.Error())
 	}
+
+	e.logDebug("authorization code issued",
+		zap.String("client_id", req.ClientID),
+		zap.String("resource", req.Resource),
+		zap.Uint64("user_id", uint64(userID)))
 
 	return c.JSON(http.StatusOK, OAuthRedirectResponse{
 		RedirectURI: buildRedirectURI(req, url.Values{"code": {code}}),
@@ -195,9 +229,12 @@ func (e *OAuthExtension) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	grantType := r.PostFormValue("grant_type")
+	e.logDebug("token request", zap.String("grant_type", grantType))
+
 	var resp *oauth.TokenResponse
 	var err error
-	switch r.PostFormValue("grant_type") {
+	switch grantType {
 	case "authorization_code":
 		resp, err = e.oauthSvc.ExchangeCode(r.Context(), oauth.TokenRequest{
 			GrantType:    r.PostFormValue("grant_type"),
@@ -218,9 +255,11 @@ func (e *OAuthExtension) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		e.logDebug("token request failed", zap.String("grant_type", grantType), zap.Error(err))
 		writeTokenError(w, err)
 		return
 	}
+	e.logDebug("token issued", zap.String("grant_type", grantType))
 	writeTokens(w, resp)
 }
 
@@ -255,9 +294,15 @@ func (e *OAuthExtension) handleRegister(w http.ResponseWriter, r *http.Request) 
 		TokenEndpointAuth: request.TokenEndpointAuthMethod,
 	})
 	if err != nil {
+		e.logDebug("client registration rejected",
+			zap.String("client_name", request.ClientName),
+			zap.Error(err))
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_client_metadata"})
 		return
 	}
+	e.logDebug("client registered",
+		zap.String("client_id", client.ClientID),
+		zap.String("client_name", client.ClientName))
 	writeJSON(w, http.StatusCreated, OAuthClientResponse{
 		ClientID:                client.ClientID,
 		ClientName:              client.ClientName,

@@ -142,10 +142,10 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 		Surface:    mcpembed.SurfaceHosted,
 		CatalogDeps: catalogDeps,
 		// Resolve the OAuth-authenticated caller to a per-user Portal API JWT.
-		CredentialResolver: mcp.NewCredentialResolver(a.identityKey, a.domain, 0),
+		CredentialResolver: mcp.NewCredentialResolver(a.identityKey, a.domain, 0).WithLogger(a.Logger().Named("mcp.credential")),
 		// Reuse the existing OAuth bearer gate as the handler-level OAuth
 		// enforcement (RFC 6750/9728 challenges).
-		OAuthHandler: mcp.NewMiddleware(a.oauthSvc, a.baseURL, a.resourceURL, a.scopes),
+		OAuthHandler: mcp.NewMiddleware(a.oauthSvc, a.baseURL, a.resourceURL, a.scopes).WithLogger(a.Logger().Named("mcp.auth")),
 		// The handler is served through the portal's router/proxy, which
 		// presents a non-loopback Origin; disable the localhost protection.
 		DisableLocalhostProtection: true,

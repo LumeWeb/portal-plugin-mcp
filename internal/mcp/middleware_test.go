@@ -11,6 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/oauth"
 	portalMocks "go.lumeweb.com/portal/core/testing/mocks"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 const (
@@ -136,6 +139,31 @@ func TestMiddlewareProtect_MissingTokenChallenges(t *testing.T) {
 
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
 	require.Contains(t, rec.Header().Get("WWW-Authenticate"), `error="invalid_token"`)
+}
+
+func TestMiddlewareProtect_DebugLogging(t *testing.T) {
+	observerCore, observed := observer.New(zapcore.DebugLevel)
+	logger := zap.New(observerCore)
+
+	oauthSvc := portalMocks.NewMockOAuthProviderService(t)
+	oauthSvc.EXPECT().ValidateAccessTokenInfo(mock.Anything, "expired-token").
+		Return(validToken(0, "", "", false), false)
+
+	mw := NewMiddleware(oauthSvc, testBaseURL, testResource, nil).WithLogger(logger)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	req.Header.Set("Authorization", "Bearer expired-token")
+
+	mw.Protect(passthrough()).ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+
+	messages := make([]string, 0, len(observed.All()))
+	for _, entry := range observed.All() {
+		messages = append(messages, entry.Message)
+	}
+	require.Contains(t, messages, "access token rejected: unknown or expired")
+	require.Contains(t, messages, "request denied: invalid or missing bearer token")
 }
 
 func TestIsOAuthBearerFailure(t *testing.T) {
