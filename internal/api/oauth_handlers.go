@@ -294,6 +294,13 @@ func (e *OAuthExtension) handleRegister(w http.ResponseWriter, r *http.Request) 
 		TokenEndpointAuth: request.TokenEndpointAuthMethod,
 	})
 	if err != nil {
+		// The MCP OAuth endpoints are unreachable when the provider is
+		// disabled; report that as 503 rather than a misleading 400 and log
+		// the underlying cause.
+		if errors.Is(err, portalservice.ErrOAuthDisabled) {
+			writeErrAndLog(e.Logger(), w, "dynamic_client_registration", request.ClientName, err)
+			return
+		}
 		e.logDebug("client registration rejected",
 			zap.String("client_name", request.ClientName),
 			zap.Error(err))

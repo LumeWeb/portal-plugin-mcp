@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/oauth"
 	coreTesting "go.lumeweb.com/portal/core/testing"
+	portalservice "go.lumeweb.com/portal/service"
 )
 
 // TestMCPEndpointCORSPreflight guards the OPTIONS route that replaced the
@@ -54,6 +56,19 @@ func TestMCPProtectedResourceMetadata(t *testing.T) {
 		rec := request(t, ctx, http.MethodGet, "/.well-known/oauth-protected-resource", nil)
 		require.Equal(t, http.StatusOK, rec.Code)
 		require.Contains(t, rec.Body.String(), "https://mcp.example.com/mcp")
+	}, getMCPAPITestOptions())
+}
+
+func TestMCPProtectedResourceMetadataNotRegistered(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		mcpOAuth(ctx).EXPECT().ProtectedResourceMetadata(mock.Anything, mock.Anything).
+			Return(nil, portalservice.ErrResourceNotRegistered)
+
+		rec := request(t, ctx, http.MethodGet, "/.well-known/oauth-protected-resource", nil)
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		require.Equal(t, serverErrorCode, body["error"])
 	}, getMCPAPITestOptions())
 }
 

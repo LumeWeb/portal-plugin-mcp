@@ -267,9 +267,14 @@ func (a *API) protectedResourceHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		meta, err := a.oauthSvc.ProtectedResourceMetadata(r.Context(), a.resourceURL)
 		if err != nil {
-			writeServerError(w)
+			// Surface a meaningful status (404 resource unknown, 503 provider
+			// disabled) instead of a generic 500, and record the underlying
+			// cause at error level so discovery failures are diagnosable.
+			writeErrAndLog(a.Logger(), w, "protected_resource_metadata", a.resourceURL, err)
 			return
 		}
+		a.Logger().Debug("serving protected resource metadata",
+			zap.String("resource_url", a.resourceURL))
 		writeJSON(w, http.StatusOK, meta)
 	})
 }
