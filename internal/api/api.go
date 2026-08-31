@@ -215,6 +215,19 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 				router.WithTags("MCP"),
 			),
 		),
+		// Serve the MCP subdomain root as a permanent (308) redirect to the MCP
+		// resource path, so users can reach the endpoint without appending /mcp.
+		router.NewRoute(http.MethodGet, "/",
+			httpHandler(func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, a.resourcePath, http.StatusPermanentRedirect)
+			}),
+			router.WithAccess(""),
+			router.WithSwagger(
+				router.WithSummary("MCP subdomain root redirect"),
+				router.WithDescription("Permanently redirects the MCP subdomain root to the MCP resource path."),
+				router.WithTags("MCP"),
+			),
+		),
 	)
 
 	return router.RegisterRoutes(gRouter, accessSvc, a.Subdomain(), routes)
