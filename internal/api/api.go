@@ -161,10 +161,15 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 	// public.
 	//
 	// The MCP streamable-HTTP endpoint accepts GET and POST on the same path.
+	// CORS is enabled on every method so cross-origin browser MCP clients can
+	// complete the OAuth authorization-code redirect and talk to the server;
+	// the OPTIONS route answers CORS preflight (the CORS middleware
+	// short-circuits it), which the previous echoRouter.Any used to serve.
 	mcpHandler := echo.WrapHandler(handler)
 	routes := router.DefineRoutes(
 		router.NewRoute(http.MethodGet, a.resourcePath, mcpHandler,
 			router.WithAccess(""),
+			router.WithCors(),
 			router.WithSwagger(
 				router.WithSummary("MCP streamable HTTP endpoint (GET)"),
 				router.WithDescription("Model Context Protocol endpoint backed by the hosted pinner MCP server."),
@@ -173,9 +178,21 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 		),
 		router.NewRoute(http.MethodPost, a.resourcePath, mcpHandler,
 			router.WithAccess(""),
+			router.WithCors(),
 			router.WithSwagger(
 				router.WithSummary("MCP streamable HTTP endpoint (POST)"),
 				router.WithDescription("Model Context Protocol endpoint backed by the hosted pinner MCP server."),
+				router.WithTags("MCP"),
+			),
+		),
+		// CORS preflight for the /mcp endpoint.
+		router.NewRoute(http.MethodOptions, a.resourcePath,
+			func(c echo.Context) error { return c.NoContent(http.StatusNoContent) },
+			router.WithAccess(""),
+			router.WithCors(),
+			router.WithSwagger(
+				router.WithSummary("MCP streamable HTTP endpoint (CORS preflight)"),
+				router.WithDescription("Answers CORS preflight for cross-origin MCP clients."),
 				router.WithTags("MCP"),
 			),
 		),
