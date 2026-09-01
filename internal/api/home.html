@@ -1,0 +1,503 @@
+{{define "page-title"}}{{.PortalName}} — MCP Server{{end}}
+
+{{define "page-content"}}
+<style>
+  /* ---- design tokens (tailwind-flavoured, no full lib) ---- */
+  #mcpsetup {
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+
+    --c-card:      var(--color-card);
+    --c-border:    var(--color-borders);
+    --c-accent:    var(--color-accent);
+    --c-accent-br: var(--color-accent-bright);
+    --c-hi:        var(--color-high-contrast-text);
+    --c-low:       var(--color-low-contrast-text);
+    --c-muted:     var(--color-muted-text);
+    --c-subtle:    var(--color-text-subtle);
+  }
+
+  /* ---- layout ---- */
+  .flex        { display: flex; }
+  .flex-col    { flex-direction: column; }
+  .inline-flex { display: inline-flex; }
+  .items-center { align-items: center; }
+  .items-start  { align-items: flex-start; }
+  .justify-between { justify-content: space-between; }
+  .justify-center  { justify-content: center; }
+  .flex-1  { flex: 1 1 0%; }
+  .shrink-0 { flex-shrink: 0; }
+  .w-full  { width: 100%; }
+  .min-w-0 { min-width: 0; }
+  .min-w-6 { min-width: var(--space-6); }
+  .grid        { display: grid; }
+  .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .break-all     { word-break: break-all; }
+  .whitespace-nowrap { white-space: nowrap; }
+  .overflow-hidden { overflow: hidden; }
+
+  /* ---- spacing (tailwind scale) ---- */
+  .gap-1   { gap: var(--space-1); }
+  .gap-1\.5 { gap: 0.375rem; }
+  .gap-2   { gap: var(--space-2); }
+  .gap-2\.5 { gap: 0.625rem; }
+  .gap-3   { gap: var(--space-3); }
+  .gap-3\.5 { gap: 0.875rem; }
+  .gap-4   { gap: var(--space-4); }
+  .gap-5   { gap: var(--space-5); }
+
+  .mt-1   { margin-top: var(--space-1); }
+  .mt-1\.5 { margin-top: 0.375rem; }
+  .mt-4   { margin-top: var(--space-4); }
+  .mb-1   { margin-bottom: var(--space-1); }
+  .pb-2   { padding-bottom: var(--space-2); }
+  .pb-4   { padding-bottom: var(--space-4); }
+  .pt-1   { padding-top: var(--space-1); }
+  .pt-2   { padding-top: var(--space-2); }
+
+  .px-2\.5 { padding-left: 0.625rem; padding-right: 0.625rem; }
+  .px-3    { padding-left: var(--space-3); padding-right: var(--space-3); }
+  .px-4    { padding-left: var(--space-4); padding-right: var(--space-4); }
+  .px-5    { padding-left: var(--space-5); padding-right: var(--space-5); }
+  .py-1    { padding-top: var(--space-1); padding-bottom: var(--space-1); }
+  .py-1\.5 { padding-top: 0.375rem; padding-bottom: 0.375rem; }
+  .py-5    { padding-top: var(--space-5); padding-bottom: var(--space-5); }
+  .pl-4    { padding-left: var(--space-4); }
+
+  /* ---- typography ---- */
+  .text-xs  { font-size: 0.75rem; }
+  .text-sm  { font-size: 0.875rem; }
+  .text-base { font-size: 1rem; }
+  .font-medium { font-weight: 500; }
+  .font-semibold { font-weight: 600; }
+  .font-bold { font-weight: 700; }
+  .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .leading-none { line-height: 1; }
+  .leading-relaxed { line-height: 1.6; }
+  .uppercase { text-transform: uppercase; }
+  .tracking-wider { letter-spacing: 0.08em; }
+
+  /* ---- colours ---- */
+  .text-hi     { color: var(--c-hi); }
+  .text-low    { color: var(--c-low); }
+  .text-muted  { color: var(--c-muted); }
+  .text-subtle { color: var(--c-subtle); }
+  .text-accent { color: var(--c-accent-br); }
+  .bg-card   { background-color: var(--c-card); }
+  .bg-accent { background-color: var(--c-accent-br); }
+  .bg-border { background-color: var(--c-border); }
+  .border-border { border-color: var(--c-border); }
+  .border-accent { border-color: var(--c-accent); }
+
+  /* ---- borders / radius ---- */
+  .border { border: 1px solid currentColor; }
+  .border-l { border-left: 1px solid currentColor; }
+  .rounded { border-radius: var(--radius); }
+  .rounded-full { border-radius: 999px; }
+  .no-underline { text-decoration: none; }
+
+  .h-1 { height: 0.25rem; }
+  .h-full { height: 100%; }
+  .transition-all { transition: width 0.25s ease; }
+
+  /* ---- hover ---- */
+  .hover\:underline:hover { text-decoration: underline; }
+  .hover\:text-accent:hover { color: var(--c-accent-br); }
+  .hover\:border-accent:hover { border-color: var(--c-accent); }
+
+  /* ---- components ---- */
+  .platform-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 1rem 0.75rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--color-borders);
+    background-color: var(--color-card);
+    color: var(--color-high-contrast-text);
+    font-family: inherit;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  }
+  .platform-card:hover {
+    border-color: var(--color-accent-bright);
+    background-color: var(--color-hovered-card);
+    transform: translateY(-1px);
+  }
+  /* Brand logos keep their native colors here, so they sit on a light chip to
+     stay visible against the dark theme; the monochrome "Other" gear uses
+     color below. */
+  .platform-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    color: #1c2321;
+    background: #ffffff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .platform-icon svg {
+    width: 62%;
+    height: 62%;
+  }
+
+  .step-num {
+    flex-shrink: 0;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    background-color: rgba(18, 115, 107, 0.15);
+    color: var(--color-accent-bright);
+    font-weight: 700;
+    font-size: 0.8125rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .wizard-btn {
+    font-family: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+  .wizard-btn.prev {
+    background: none;
+    border: 1px solid var(--color-accent);
+    color: var(--color-muted-text);
+  }
+  .wizard-btn.prev:hover:not(:disabled) { color: var(--color-accent-bright); border-color: var(--color-accent-bright); }
+  .wizard-btn.prev:disabled { opacity: 0.4; cursor: not-allowed; }
+  .wizard-btn.next {
+    background-color: var(--color-accent-bright);
+    border: 1px solid var(--color-accent-bright);
+    color: var(--color-high-contrast-text);
+  }
+  .wizard-btn.next:hover { background-color: var(--color-hovered-solid-bg); }
+
+  .copy-btn {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid var(--color-accent);
+    border-radius: var(--radius);
+    padding: 0.375rem 0.625rem;
+    color: var(--color-muted-text);
+    font-family: inherit;
+    font-size: 0.8125rem;
+    cursor: pointer;
+  }
+  .copy-btn:hover { color: var(--color-accent-bright); border-color: var(--color-accent-bright); }
+
+  /* Resets for utility-styled buttons (colour/border come from utilities). */
+  .btn-reset { background: none; font-family: inherit; cursor: pointer; color: inherit; }
+  .btn-borderless { border: none; }
+
+  .hidden { display: none !important; }
+
+  @media (min-width: 32em) {
+    .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+</style>
+
+<div class="app-header">
+  <div class="app-logo">
+    <svg class="app-logo-placeholder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+      <path d="M7 11V7a5 5 0 0110 0v4"></path>
+    </svg>
+  </div>
+  <h1 class="app-name" id="home-heading">{{.PortalName}}</h1>
+  <p class="app-description">MCP (Model Context Protocol) — a standard way to connect AI assistants like Claude, Grok, and ChatGPT to your account.</p>
+</div>
+
+<div class="divider"></div>
+
+<div class="info-section">
+  <p class="info-text">Connect an AI assistant to this server. You'll sign in with your {{.PortalName}} account once, when you add the connector. Pick your assistant to get started.</p>
+</div>
+
+<div id="mcpsetup" class="wizard w-full flex flex-col gap-5">
+  <!-- Step 0: pick a client -->
+  <div id="wiz-select" class="wizard-screen flex flex-col gap-4">
+    <p class="helper-text font-semibold text-low pb-2" id="wiz-pick-label">Choose your assistant</p>
+    <div id="wiz-grid" class="grid grid-cols-2 gap-3"></div>
+  </div>
+
+  <!-- Step 1+: guided steps -->
+  <div id="wiz-steps" class="wizard-screen hidden flex flex-col gap-4">
+    <div class="flex items-center justify-between gap-3">
+      <div class="min-w-0">
+        <button id="wiz-back" class="btn-reset btn-borderless inline-flex items-center gap-1.5 text-muted hover:text-accent" aria-label="Back to client selection">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+          <span id="wiz-name" class="text-base font-semibold text-hi leading-relaxed"></span>
+        </button>
+      </div>
+      <span id="wiz-count" class="shrink-0 whitespace-nowrap text-xs text-subtle rounded-full border border-border bg-card px-2.5 py-1"></span>
+    </div>
+
+    <div class="h-1 w-full overflow-hidden rounded-full bg-border">
+      <div id="wiz-progress" class="h-full rounded-full bg-accent transition-all" style="width:0%"></div>
+    </div>
+
+    <div class="flex items-center justify-between gap-3">
+      <span class="flex-1"></span>
+      <button id="wiz-toggle" class="btn-reset inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted hover:text-accent hover:border-accent" aria-expanded="false">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        <span id="wiz-toggle-label">Show all steps</span>
+      </button>
+    </div>
+
+    <div id="wiz-endpoint" class="hidden flex flex-col gap-2.5 rounded border border-border bg-card px-4 py-5">
+      <span id="wiz-endpoint-label" class="text-xs uppercase tracking-wider text-subtle"></span>
+      <div class="flex items-center gap-2.5">
+        <code id="wiz-endpoint-value" class="flex-1 break-all font-mono text-sm text-accent leading-relaxed"></code>
+        <button id="wiz-copy" class="copy-btn shrink-0" data-copy="">Copy</button>
+      </div>
+    </div>
+
+    <div id="wiz-single" class="rounded border border-border bg-card px-5 py-5">
+      <div id="wiz-step" class="flex items-start gap-3.5"></div>
+    </div>
+
+    <div id="wiz-all" class="hidden flex flex-col gap-3"></div>
+
+    <div class="flex items-center justify-between gap-3">
+      <button id="wiz-prev" class="wizard-btn prev" disabled>Previous</button>
+      <button id="wiz-next" class="wizard-btn next">Next</button>
+    </div>
+
+    <div id="wiz-note" class="hidden"></div>
+    <div id="wiz-links" class="hidden flex flex-wrap gap-3.5"></div>
+  </div>
+</div>
+
+<script id="mcp-wizard-data" type="application/json">{{.WizardJSON}}</script>
+
+<script src="/static/handlebars.min.js"></script>
+
+{{/* Handlebars templates live in wizard_templates.html and are injected as
+trusted raw HTML so Go never parses their {{ }} actions. */ -}}
+{{.WizardTemplates}}
+
+<script>
+(function () {
+  var root = document.getElementById("mcpsetup");
+  var data = null;
+  try { data = JSON.parse(document.getElementById("mcp-wizard-data").textContent); } catch (e) { return; }
+  var icons = {
+    grok: '<svg viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M395.479 633.828L735.91 381.105C752.599 368.715 776.454 373.548 784.406 392.792C826.26 494.285 807.561 616.253 724.288 699.996C641.016 783.739 525.151 802.104 419.247 760.277L303.556 814.143C469.49 928.202 670.987 899.995 796.901 773.282C896.776 672.843 927.708 535.937 898.785 412.476L899.047 412.739C857.105 231.37 909.358 158.874 1016.4 10.6326C1018.93 7.11771 1021.47 3.60279 1024 0L883.144 141.651V141.212L395.392 633.916" fill="#0A0A0A"/><path d="M325.226 695.251C206.128 580.84 226.662 403.776 328.285 301.668C403.431 226.097 526.549 195.254 634.026 240.596L749.454 186.994C728.657 171.88 702.007 155.623 671.424 144.2C533.19 86.9942 367.693 115.465 255.323 228.382C147.234 337.081 113.244 504.215 171.613 646.833C215.216 753.423 143.739 828.818 71.7385 904.916C46.2237 931.893 20.6216 958.87 0 987.429L325.139 695.339" fill="#0A0A0A"/></svg>',
+    claude: '<svg viewBox="0 0 256 257" xmlns="http://www.w3.org/2000/svg"><path fill="#D97757" d="m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z"/></svg>',
+    chatgpt: '<svg viewBox="0 0 256 260" xmlns="http://www.w3.org/2000/svg"><path d="M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z"/></svg>',
+    other: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.1a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.1a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.1a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>'
+  };
+
+  var selectEl = document.getElementById("wiz-select");
+  var stepsEl = document.getElementById("wiz-steps");
+  var gridEl = document.getElementById("wiz-grid");
+  var nameEl = document.getElementById("wiz-name");
+  var countEl = document.getElementById("wiz-count");
+  var progressEl = document.getElementById("wiz-progress");
+  var toggleEl = document.getElementById("wiz-toggle");
+  var toggleLabel = document.getElementById("wiz-toggle-label");
+  var singleEl = document.getElementById("wiz-single");
+  var stepEl = document.getElementById("wiz-step");
+  var allEl = document.getElementById("wiz-all");
+  var endpointEl = document.getElementById("wiz-endpoint");
+  var endpointLabelEl = document.getElementById("wiz-endpoint-label");
+  var endpointValueEl = document.getElementById("wiz-endpoint-value");
+  var copyEl = document.getElementById("wiz-copy");
+  var prevEl = document.getElementById("wiz-prev");
+  var nextEl = document.getElementById("wiz-next");
+  var backEl = document.getElementById("wiz-back");
+  var noteEl = document.getElementById("wiz-note");
+  var linksEl = document.getElementById("wiz-links");
+
+  var current = null;
+  var step = 0;
+  var all = false;
+
+  // The Handlebars runtime loads from /static/handlebars.min.js; if that asset
+  // fails, bail instead of throwing a ReferenceError on a mostly-rendered page.
+  // The wizard screen is hidden by default and only un-hidden by code below, so
+  // reveal it with the server address so users can still connect manually.
+  if (typeof Handlebars === "undefined") {
+    selectEl.classList.add("hidden");
+    stepsEl.classList.remove("hidden");
+    renderEndpoint();
+    noteEl.textContent = "The setup wizard could not load. Reload the page, or use the server address above to connect your client manually.";
+    noteEl.classList.remove("hidden");
+    copyEl.addEventListener("click", copyHandler);
+    return;
+  }
+
+  Handlebars.registerHelper("addOne", function (i) { return i + 1; });
+  var tpl = Object.create(null);
+  document.querySelectorAll('script[type="text/x-handlebars-template"]').forEach(function (s) {
+    tpl[s.id] = Handlebars.compile(s.innerHTML);
+  });
+
+  // A step's body: title + optional detail + optional nested sub-steps.
+  function stepBody(s, num) {
+    return tpl["tpl-step-body"](Object.assign({}, s, { num: num }));
+  }
+
+  // A numbered step bubble + its body (title/detail/sub-steps).
+  function stepHtml(num, s) {
+    return tpl["tpl-step"]({ num: num, body: stepBody(s, num) });
+  }
+
+  // Build the client grid.
+  (data.platforms || []).forEach(function (p) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "platform-card";
+    btn.innerHTML = tpl["tpl-grid-btn"]({ icon: icons[p.icon] || icons.other, label: p.label });
+    btn.addEventListener("click", function () { open(p); });
+    gridEl.appendChild(btn);
+  });
+
+  function renderEndpoint() {
+    if (data && data.resourceURL) {
+      endpointLabelEl.textContent = data.endpointLabel || "MCP server URL";
+      endpointValueEl.textContent = data.resourceURL;
+      copyEl.setAttribute("data-copy", data.resourceURL);
+      endpointEl.classList.remove("hidden");
+    } else {
+      endpointEl.classList.add("hidden");
+    }
+  }
+
+  // Flips between the single-step and "show all" views.
+  function setViewHeader() {
+    toggleLabel.textContent = all ? "Steps" : "Show all steps";
+    singleEl.classList.toggle("hidden", all);
+    allEl.classList.toggle("hidden", !all);
+    prevEl.style.display = all ? "none" : "";
+    nextEl.style.display = all ? "none" : "";
+  }
+
+  // Shows/hides the note and docs links for the current platform. They appear
+  // at the head of the guide so users see the caveats before they start.
+  function renderMeta(atHead) {
+    if (atHead && current.note) {
+      noteEl.innerHTML = tpl["tpl-note"]({ text: current.note, source: current.noteSource || null });
+      noteEl.classList.remove("hidden");
+    } else {
+      noteEl.classList.add("hidden");
+    }
+
+    if (atHead && current.links && current.links.length) {
+      linksEl.innerHTML = current.links.map(function (l) { return tpl["tpl-link"](l); }).join("");
+      linksEl.classList.remove("hidden");
+    } else {
+      linksEl.classList.add("hidden");
+    }
+  }
+
+  function render() {
+    if (!current) return;
+    var steps = current.steps || [];
+    nameEl.textContent = current.label;
+
+    setViewHeader();
+    renderEndpoint();
+
+    if (!steps.length) {
+      countEl.textContent = "0 steps";
+      progressEl.style.width = "0%";
+      prevEl.disabled = true;
+      nextEl.disabled = true;
+      stepEl.innerHTML = '<div class="text-base font-semibold text-hi leading-relaxed">Nothing to configure.</div>';
+      renderMeta(false);
+      return;
+    }
+
+    countEl.textContent = all ? steps.length + " steps" : "Step " + (step + 1) + " of " + steps.length;
+
+    if (all) {
+      progressEl.style.width = "100%";
+      allEl.innerHTML = steps.map(function (s, i) {
+        return tpl["tpl-all-card"]({ step: stepHtml(i + 1, s) });
+      }).join("");
+    } else {
+      stepEl.innerHTML = stepHtml(step + 1, steps[step] || {});
+      progressEl.style.width = (((step + 1) / steps.length) * 100) + "%";
+      prevEl.disabled = step === 0;
+      nextEl.disabled = false;
+      nextEl.textContent = step === steps.length - 1 ? "Done" : "Next";
+    }
+
+    renderMeta(all || step === 0);
+  }
+
+  function open(p) {
+    current = p;
+    step = 0;
+    all = false;
+    selectEl.classList.add("hidden");
+    stepsEl.classList.remove("hidden");
+    render();
+  }
+
+  function closeSteps() {
+    current = null;
+    step = 0;
+    all = false;
+    stepsEl.classList.add("hidden");
+    selectEl.classList.remove("hidden");
+  }
+
+  prevEl.addEventListener("click", function () { if (step > 0) { step--; render(); } });
+
+  nextEl.addEventListener("click", function () {
+    var n = (current.steps || []).length;
+    if (step < (n - 1)) { step++; render(); }
+    else { closeSteps(); }
+  });
+
+  backEl.addEventListener("click", closeSteps);
+
+  toggleEl.addEventListener("click", function () {
+    all = !all;
+    toggleEl.setAttribute("aria-expanded", all ? "true" : "false");
+    render();
+  });
+
+  copyEl.addEventListener("click", copyHandler);
+
+  function copyHandler() {
+    var text = copyEl.getAttribute("data-copy") || "";
+    var done = function () {
+      var orig = copyEl.textContent;
+      copyEl.textContent = "Copied!";
+      setTimeout(function () { copyEl.textContent = orig; }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, done);
+    } else {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta);
+      done();
+    }
+  }
+})();
+</script>
+{{end}}

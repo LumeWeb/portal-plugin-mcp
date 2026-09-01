@@ -123,11 +123,60 @@ func TestMCPProtectedResourceMetadataNotRegistered(t *testing.T) {
 	}, getMCPAPITestOptions())
 }
 
-func TestMCPRootRedirectsToResourcePath(t *testing.T) {
+func TestMCPRootServesHomepage(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		rec := request(t, ctx, http.MethodGet, "/", nil)
-		require.Equal(t, http.StatusPermanentRedirect, rec.Code)
-		require.Equal(t, "/mcp", rec.Header().Get("Location"))
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Header().Get("Content-Type"), "text/html")
+		body := rec.Body.String()
+		// The landing page must point users at the MCP resource path and render
+		// the endpoint URL, not redirect.
+		require.Contains(t, body, mcpResource)
+		require.Contains(t, body, "/mcp")
+		// The setup wizard must be present with its client tabs, the endpoint
+		// to copy, and the domain clients ask users to allowlist.
+		require.Contains(t, body, "Choose your assistant")
+		require.Contains(t, body, "Grok")
+		require.Contains(t, body, "Claude")
+		require.Contains(t, body, "ChatGPT")
+		require.Contains(t, body, "mcp.example.com")
+		// The wizard supports nested sub-steps and the copy ships them.
+		require.Contains(t, body, "subSteps")
+		require.Contains(t, body, "allowed domains")
+
+		// The page loads the embedded Handlebars runtime and the Handlebars
+		// templates are injected verbatim (Go must not have re-parsed their
+		// {{ }} actions).
+		require.Contains(t, body, `<script src="/static/handlebars.min.js"></script>`)
+		require.Contains(t, body, `id="tpl-step-body"`)
+		require.Contains(t, body, `{{#if detail}}`)
+
+		// The injected wizard payload must be valid JSON (regression: placeholders
+		// previously added unbalanced quotes and broke JSON.parse client-side).
+		const startMarker = `<script id="mcp-wizard-data" type="application/json">`
+		const endMarker = "</script>"
+		start := strings.Index(body, startMarker)
+		require.GreaterOrEqual(t, start, 0)
+		remainder := body[start+len(startMarker):]
+		end := strings.Index(remainder, endMarker)
+		require.GreaterOrEqual(t, end, 0)
+		wizardJSON := remainder[:end]
+		require.True(t, json.Valid([]byte(wizardJSON)), "wizard JSON must parse")
+
+		// The wizard must check for the Handlebars runtime before using it, so a
+		// failed /static/handlebars.min.js load degrades to a visible fallback
+		// message instead of throwing a ReferenceError after the JSON guard
+		// already passed (regression from Kody review round 2).
+		require.Contains(t, body, `typeof Handlebars === "undefined"`)
+	}, getMCPAPITestOptions())
+}
+
+func TestMCPStaticServesHandlebars(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		rec := request(t, ctx, http.MethodGet, "/static/handlebars.min.js", nil)
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Header().Get("Content-Type"), "javascript")
+		require.Contains(t, rec.Body.String(), "Handlebars")
 	}, getMCPAPITestOptions())
 }
 

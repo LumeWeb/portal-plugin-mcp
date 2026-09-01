@@ -75,16 +75,19 @@ func clientURIHost(raw string) string {
 	return u.Host
 }
 
-// layoutData is the shared layout wrapper for the embedded consent templates.
+// layoutData is the shared layout wrapper for the embedded HTML templates.
+// MainRole sets the ARIA role on the card element; it is empty on regular
+// pages (implicit main) and "dialog" on the OAuth consent modal.
 type layoutData struct {
+	MainRole        string
 	AriaLabelledBy  string
 	AriaDescribedBy string
 	MetaDescription string
 	PageData        any
 }
 
-//go:embed consent_layout.html
-var consentLayoutHTML string
+//go:embed layout.html
+var layoutHTML string
 
 //go:embed consent.html
 var consentHTML string
@@ -93,7 +96,7 @@ var consentTemplate *template.Template
 
 func init() {
 	consentTemplate = template.Must(template.New("consent").
-		Parse(consentLayoutHTML))
+		Parse(layoutHTML))
 	template.Must(consentTemplate.New("page").Parse(consentHTML))
 	template.Must(consentTemplate.Parse(`{{define "consent"}}{{template "layout" .}}{{end}}`))
 }
@@ -250,6 +253,7 @@ func (e *OAuthExtension) handleAuthorizeGET(c echo.Context) error {
 
 	c.Response().Header().Set("Content-Type", "text/html; charset=utf-8")
 	return consentTemplate.ExecuteTemplate(c.Response().Writer, "consent", layoutData{
+		MainRole:        "dialog",
 		AriaLabelledBy:  "consent-heading",
 		AriaDescribedBy: "consent-description",
 		MetaDescription: "Authorize a MCP client to access your portal account",
