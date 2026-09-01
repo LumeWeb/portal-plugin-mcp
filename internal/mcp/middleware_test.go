@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	testBaseURL    = "https://mcp.example.com"
-	testResource   = "https://mcp.example.com/mcp"
-	testScope      = "mcp offline_access"
-	testExpiry     = 1 * time.Hour
+	testBaseURL  = "https://mcp.example.com"
+	testResource = "https://mcp.example.com/mcp"
+	testScope    = "mcp offline_access"
+	testExpiry   = 1 * time.Hour
 )
 
 func passthrough() http.Handler {

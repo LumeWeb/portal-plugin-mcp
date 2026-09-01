@@ -143,13 +143,45 @@ func TestOAuthAuthorizeGET_UnauthenticatedRedirectsToAppLogin(t *testing.T) {
 			"code_challenge_method": {"S256"},
 		}
 		oauthExt(ctx).EXPECT().ValidateAuthorizeRequest(mock.Anything, mock.Anything).Return(nil)
+		oauthExt(ctx).EXPECT().GetClientMetadata(mock.Anything, "client_abc").Return(&oauth.Client{
+			ClientID: "client_abc", ClientName: "MCP Inspector",
+		}, nil)
 
 		rec := request(t, ctx, http.MethodGet, "/api/auth/oauth/authorize?"+q.Encode(), nil)
 		require.Equal(t, http.StatusFound, rec.Code)
 		loc := rec.Header().Get("Location")
 		require.Contains(t, loc, "/app-login")
 		require.Contains(t, loc, "to=")
-		require.Contains(t, loc, "app=client_abc")
+		// The `app` query arg the login page renders must be the registered
+		// client display name, never the raw client_id.
+		require.Contains(t, loc, "app=MCP+Inspector")
+		require.NotContains(t, loc, "app=client_abc")
+	}, getOAuthExtensionTestOptions())
+}
+
+func TestOAuthAuthorizeGET_UnauthenticatedLoginAppNameNeverIsClientIDURL(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// A client like mcpjam uses its client-metadata document URL as the
+		// client_id. The /app-login `app` arg must carry the display name, not
+		// that URL.
+		clientURL := "https://www.mcpjam.com/.well-known/oauth/client-metadata.json"
+		q := url.Values{"response_type": {"code"}, "client_id": {clientURL}}
+		oauthExt(ctx).EXPECT().ValidateAuthorizeRequest(mock.Anything, mock.Anything).Return(nil)
+		oauthExt(ctx).EXPECT().GetClientMetadata(mock.Anything, clientURL).Return(&oauth.Client{
+			ClientID: clientURL, ClientName: "MCP Jam",
+		}, nil)
+
+		rec := request(t, ctx, http.MethodGet, "/api/auth/oauth/authorize?"+q.Encode(), nil)
+		require.Equal(t, http.StatusFound, rec.Code)
+		loc := rec.Header().Get("Location")
+		require.Contains(t, loc, "/app-login")
+		locURL, err := url.Parse(loc)
+		require.NoError(t, err)
+		// The `app` arg the login page renders must be the registered client
+		// display name, never the client-metadata URL used as client_id. The
+		// URL may still appear in the `to` param (the redirect back to the
+		// authorize endpoint), so assert only on the app value.
+		require.Equal(t, "MCP Jam", locURL.Query().Get("app"))
 	}, getOAuthExtensionTestOptions())
 }
 
