@@ -103,48 +103,6 @@ func NewAPI() (core.API, []core.ContextBuilderOption, error) {
 			api.identityKey = coreCfg.Identity.PrivateKey()
 			api.domain = coreCfg.Domain
 
-			// Register this MCP server as a protected resource so the OAuth
-			// provider can issue tokens for it (RFC 8707) and serve its
-			// RFC 9728 protected-resource metadata.
-			if err := api.oauthSvc.RegisterResource(ctx, core.OAuthProtectedResource{
-				ResourceURL: api.resourceURL,
-				Scopes:      api.scopes,
-				DisplayName: "Portal MCP Server",
-			}); err != nil {
-				// MCP is unusable without OAuth. When the provider is disabled
-				// (oauth.enabled=false) fail closed: skip registration and let
-				// the OAuth middleware deny all MCP requests, rather than taking
-				// down the whole portal.
-				if errors.Is(err, portalservice.ErrOAuthDisabled) {
-					ctx.Logger().Warn("mcp: oauth provider disabled; MCP endpoint unavailable",
-						zap.Error(err), zap.String("resource_url", api.resourceURL))
-					return nil
-				}
-				ctx.Logger().Error("mcp: failed to register protected resource",
-					zap.Error(err), zap.String("resource_url", api.resourceURL))
-				return fmt.Errorf("mcp: register resource: %w", err)
-			}
-
-			// Read the resource back to confirm registration landed, so a
-			// provider-side ordering or registry issue is visible at boot
-			// rather than surfacing later as a 404 on the PRM endpoint. A
-			// read-back failure is logged, not fatal: registration already
-			// succeeded and the portal must keep serving.
-			reg, err := api.oauthSvc.GetResource(ctx, api.resourceURL)
-			if err != nil {
-				ctx.Logger().Error("mcp: failed to read back registered resource",
-					zap.Error(err), zap.String("resource_url", api.resourceURL))
-			} else {
-				ctx.Logger().Info("mcp: protected resource registered",
-					zap.String("resource_url", api.resourceURL),
-					zap.Bool("visible", reg != nil),
-					zap.Strings("scopes", api.scopes))
-				if reg == nil {
-					ctx.Logger().Error("mcp: protected resource not visible after registration",
-						zap.String("resource_url", api.resourceURL))
-				}
-			}
-
 			return nil
 		}),
 	)
@@ -252,7 +210,53 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 		),
 	)
 
-	return router.RegisterRoutes(gRouter, accessSvc, a.Subdomain(), routes)
+	if err := router.RegisterRoutes(gRouter, accessSvc, a.Subdomain(), routes); err != nil {
+		return err
+	}
+
+	// Register this MCP server as a protected resource so the OAuth provider
+	// can issue tokens for it (RFC 8707) and serve its RFC 9728
+	// protected-resource metadata. This runs in Configure (not the startup
+	// func) because the provider service reports ErrOAuthDisabled until its own
+	// startup func has built the AuthorizationServer; Configure runs after all
+	// startup funcs complete, so registration is reliable.
+	if err := a.oauthSvc.RegisterResource(a.Context(), core.OAuthProtectedResource{
+		ResourceURL: a.resourceURL,
+		Scopes:      a.scopes,
+		DisplayName: "Portal MCP Server",
+	}); err != nil {
+		// MCP is unusable without OAuth. When the provider is disabled
+		// (oauth.enabled=false) fail closed: skip registration and let the OAuth
+		// middleware deny all MCP requests, rather than taking down the whole
+		// portal. The routes above stay registered regardless.
+		if errors.Is(err, portalservice.ErrOAuthDisabled) {
+			a.Context().Logger().Warn("mcp: oauth provider disabled; MCP endpoint unavailable",
+				zap.Error(err), zap.String("resource_url", a.resourceURL))
+			return nil
+		}
+		return fmt.Errorf("mcp: register resource: %w", err)
+	}
+
+	// Read the resource back to confirm registration landed, so a
+	// provider-side registry issue is visible at boot rather than surfacing
+	// later as a 404 on the PRM endpoint. A read-back failure is logged, not
+	// fatal: registration already succeeded and the portal must keep serving.
+	reg, err := a.oauthSvc.GetResource(a.Context(), a.resourceURL)
+	if err != nil {
+		a.Logger().Error("mcp: failed to read back registered resource",
+			zap.Error(err), zap.String("resource_url", a.resourceURL))
+	} else {
+		a.Logger().Info("mcp: protected resource registered",
+			zap.String("resource_url", a.resourceURL),
+			zap.Bool("visible", reg != nil),
+			zap.Strings("scopes", a.scopes))
+		if reg == nil {
+			a.Logger().Error("mcp: protected resource not visible after registration",
+				zap.String("resource_url", a.resourceURL))
+		}
+	}
+
+	return nil
 }
 
 // mcpCORSConfig returns the CORS policy for the /mcp endpoint. It allows the
