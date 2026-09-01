@@ -46,6 +46,92 @@ func TestOAuthMetadataDisabledProvider(t *testing.T) {
 	}, getOAuthExtensionTestOptions())
 }
 
+func TestOAuthMetadataOPTIONSPreflightCORS(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// GET already returns CORS headers; the missing piece was the OPTIONS
+		// preflight, which used to 405 because no OPTIONS route existed.
+		req := ctx.NewAPIRequest(http.MethodOptions, "/.well-known/oauth-authorization-server", nil)
+		req.Header.Set("Origin", "http://localhost:5173")
+		req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+		req.Header.Set("Access-Control-Request-Headers", "accept, mcp-protocol-version")
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNoContent, rec.Code)
+		require.Equal(t, "http://localhost:5173", rec.Header().Get("Access-Control-Allow-Origin"))
+		require.Contains(t, strings.ToLower(rec.Header().Get("Access-Control-Allow-Methods")), "get")
+		require.Contains(t, strings.ToLower(rec.Header().Get("Access-Control-Allow-Headers")), "accept")
+		require.Contains(t, strings.ToLower(rec.Header().Get("Access-Control-Allow-Headers")), "mcp-protocol-version")
+	}, getOAuthExtensionTestOptions())
+}
+
+func TestOAuthOpenIDConfig(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Even when the configured AS issuer (oauth.issuer) diverges from the
+		// dashboard subdomain, the OIDC document pins the issuer to the base
+		// URL its endpoints are actually served from, so OIDC Core 1.0 strict
+		// clients accept it.
+		oauthExt(ctx).EXPECT().Metadata(mock.Anything).Return(&oauth.ASMetadata{
+			Issuer: "https://auth.example.com",
+		}, nil)
+
+		rec := request(t, ctx, http.MethodGet, "/.well-known/openid-configuration", nil)
+		require.Equal(t, http.StatusOK, rec.Code)
+
+		var doc openIDConfig
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &doc))
+		require.Equal(t, "dashboard.example.com", doc.Issuer)
+		require.Equal(t, "dashboard.example.com/api/auth/oauth/authorize", doc.AuthorizationEndpoint)
+		require.Equal(t, "dashboard.example.com/api/auth/oauth/token", doc.TokenEndpoint)
+		require.Equal(t, "dashboard.example.com/api/auth/oauth/register", doc.RegistrationEndpoint)
+		require.Equal(t, "dashboard.example.com/.well-known/jwks.json", doc.JwksURI)
+		require.Contains(t, doc.ResponseTypesSupported, "code")
+		require.Contains(t, doc.SubjectTypesSupported, "public")
+		require.Contains(t, doc.IdTokenSigningAlgValuesSupported, "EdDSA")
+		require.Contains(t, doc.CodeChallengeMethodsSupported, "S256")
+	}, getOAuthExtensionTestOptions())
+}
+
+func TestOAuthOpenIDConfigDisabledProvider(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		oauthExt(ctx).EXPECT().Metadata(mock.Anything).Return(nil, portalservice.ErrOAuthDisabled)
+
+		rec := request(t, ctx, http.MethodGet, "/.well-known/openid-configuration", nil)
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		require.Contains(t, rec.Body.String(), "AuthorizationServerUnavailable")
+	}, getOAuthExtensionTestOptions())
+}
+
+func TestOAuthOpenIDConfigOPTIONSPreflightCORS(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		req := ctx.NewAPIRequest(http.MethodOptions, "/.well-known/openid-configuration", nil)
+		req.Header.Set("Origin", "http://localhost:5173")
+		req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNoContent, rec.Code)
+		require.Equal(t, "http://localhost:5173", rec.Header().Get("Access-Control-Allow-Origin"))
+	}, getOAuthExtensionTestOptions())
+}
+
+func TestOAuthJWKS(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		rec := request(t, ctx, http.MethodGet, "/.well-known/jwks.json", nil)
+		require.Equal(t, http.StatusOK, rec.Code)
+
+		var ks webKeySet
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ks))
+		require.Len(t, ks.Keys, 1)
+		k := ks.Keys[0]
+		require.Equal(t, "OKP", k.Kty)
+		require.Equal(t, "Ed25519", k.Crv)
+		require.Equal(t, "EdDSA", k.Alg)
+		require.Equal(t, "sig", k.Use)
+		require.NotEmpty(t, k.X)
+	}, getOAuthExtensionTestOptions())
+}
+
 func TestOAuthAuthorizeGET_UnauthenticatedRedirectsToAppLogin(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		q := url.Values{

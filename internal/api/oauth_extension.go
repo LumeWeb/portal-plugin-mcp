@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/ed25519"
 	"net/http"
 	"net/url"
 	"strings"
@@ -29,6 +30,10 @@ type OAuthExtension struct {
 	// baseURL is the dashboard API's public base URL. It is the issuer of the
 	// authorization server and the prefix of every OAuth endpoint.
 	baseURL string
+	// publicKey is the portal's Ed25519 identity public key, exported as the
+	// OpenID Connect JWKS so clients can verify portal-signed tokens. Captured
+	// at startup from the core config.
+	publicKey ed25519.PublicKey
 	// logger logs OAuth authorization-server events at debug level. It is a
 	// named child of the context logger, set during startup. A nil logger is a
 	// no-op.
@@ -52,6 +57,9 @@ func NewOAuthExtension() core.APIExtensionFactory {
 			if ext.baseURL == "" {
 				ext.baseURL = ctx.Config().Config().Core.Domain
 			}
+			// The OIDC discovery document and JWKS advertise the portal's
+			// Ed25519 identity key, the key portal JWTs are signed with.
+			ext.publicKey = ctx.Config().Config().Core.Identity.PublicKey()
 			ext.logger = ctx.Logger().Named("mcp.oauth")
 			return nil
 		})), nil
@@ -102,6 +110,20 @@ func (e *OAuthExtension) Configure(gRouter router.Router, accessSvc core.AccessS
 		router.WithSuccessResponse(http.StatusOK, "Authorization server metadata", router.WithJSONContent(oauth.ASMetadata{})),
 	)
 
+	oidcSwagger := router.WithSwagger(
+		router.WithSummary("OpenID Connect Discovery"),
+		router.WithDescription("OpenID Connect Discovery 1.0 document describing the portal's OAuth issuer and JWKS."),
+		router.WithTags("MCP OAuth"),
+		router.WithSuccessResponse(http.StatusOK, "OpenID Connect discovery document", router.WithJSONContent(openIDConfig{})),
+	)
+
+	jwksSwagger := router.WithSwagger(
+		router.WithSummary("JSON Web Key Set"),
+		router.WithDescription("RFC 7517 JSON Web Key Set exposing the portal's Ed25519 identity public key."),
+		router.WithTags("MCP OAuth"),
+		router.WithSuccessResponse(http.StatusOK, "JSON Web Key Set", router.WithJSONContent(webKeySet{})),
+	)
+
 	authorizeGetSwagger := router.WithSwagger(append([]router.SwaggerOption{
 		router.WithSummary("Authorize MCP Client"),
 		router.WithDescription("Renders the OAuth consent page for an authenticated resource owner, or redirects unauthenticated users to the portal login. Submitting the page issues an authorization code."),
@@ -148,7 +170,40 @@ func (e *OAuthExtension) Configure(gRouter router.Router, accessSvc core.AccessS
 		router.NewRoute(http.MethodGet, "/.well-known/oauth-authorization-server",
 			httpHandler(e.handleASMetadata),
 			metadataSwagger,
-			router.WithCors(),
+			router.WithCors(discoveryCORSConfig()),
+		),
+		// CORS preflight for the authorization-server metadata endpoint.
+		router.NewRoute(http.MethodOptions, "/.well-known/oauth-authorization-server",
+			discoveryPreflight,
+			metadataSwagger,
+			router.WithCors(discoveryCORSConfig()),
+		),
+		// OpenID Connect Discovery document. Lets OIDC-discovery-using MCP
+		// clients resolve the portal's authorization/token endpoints and the
+		// JWKS that verifies its EdDSA-signed tokens.
+		router.NewRoute(http.MethodGet, "/.well-known/openid-configuration",
+			e.handleOpenIDConfig,
+			oidcSwagger,
+			router.WithCors(discoveryCORSConfig()),
+		),
+		// CORS preflight for the OpenID Connect discovery document.
+		router.NewRoute(http.MethodOptions, "/.well-known/openid-configuration",
+			discoveryPreflight,
+			oidcSwagger,
+			router.WithCors(discoveryCORSConfig()),
+		),
+		// RFC 7517 JSON Web Key Set exposing the portal's Ed25519 identity
+		// public key, referenced by the OpenID Connect discovery jwks_uri.
+		router.NewRoute(http.MethodGet, "/.well-known/jwks.json",
+			e.handleJWKS,
+			jwksSwagger,
+			router.WithCors(discoveryCORSConfig()),
+		),
+		// CORS preflight for the JWKS endpoint.
+		router.NewRoute(http.MethodOptions, "/.well-known/jwks.json",
+			discoveryPreflight,
+			jwksSwagger,
+			router.WithCors(discoveryCORSConfig()),
 		),
 		// Authorization endpoint (RFC 6749 §4.1.1): GET renders the consent
 		// page, POST issues the authorization code after the authenticated
