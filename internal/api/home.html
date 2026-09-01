@@ -335,13 +335,10 @@ trusted raw HTML so Go never parses their {{ }} actions. */ -}}
   if (typeof Handlebars === "undefined") {
     selectEl.classList.add("hidden");
     stepsEl.classList.remove("hidden");
-    if (data && data.resourceURL) {
-      endpointValueEl.textContent = data.resourceURL;
-      copyEl.setAttribute("data-copy", data.resourceURL);
-      endpointEl.classList.remove("hidden");
-    }
+    renderEndpoint();
     noteEl.textContent = "The setup wizard could not load. Reload the page, or use the server address above to connect your client manually.";
     noteEl.classList.remove("hidden");
+    copyEl.addEventListener("click", copyHandler);
     return;
   }
 
@@ -372,7 +369,7 @@ trusted raw HTML so Go never parses their {{ }} actions. */ -}}
   });
 
   function renderEndpoint() {
-    if (data.resourceURL) {
+    if (data && data.resourceURL) {
       endpointLabelEl.textContent = data.endpointLabel || "MCP server URL";
       endpointValueEl.textContent = data.resourceURL;
       copyEl.setAttribute("data-copy", data.resourceURL);
@@ -478,7 +475,9 @@ trusted raw HTML so Go never parses their {{ }} actions. */ -}}
     render();
   });
 
-  copyEl.addEventListener("click", function () {
+  copyEl.addEventListener("click", copyHandler);
+
+  function copyHandler() {
     var text = copyEl.getAttribute("data-copy") || "";
     var done = function () {
       var orig = copyEl.textContent;
@@ -498,7 +497,7 @@ trusted raw HTML so Go never parses their {{ }} actions. */ -}}
       document.body.removeChild(ta);
       done();
     }
-  });
+  }
 })();
 </script>
 {{end}}
