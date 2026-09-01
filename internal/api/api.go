@@ -137,6 +137,14 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 		// The handler is served through the portal's router/proxy, which
 		// presents a non-loopback Origin; disable the localhost protection.
 		DisableLocalhostProtection: true,
+		// Point the hosted IPFS byte-route coordinators at the externally
+		// reachable MCP resource path so presigned upload PUT and filedrop GET
+		// URLs mint against the public subdomain (/mcp/upload/<token>,
+		// /mcp/download/<token>) instead of a loopback temp port
+		// (127.0.0.1:<random>) a hosted agent cannot reach. The coordinators
+		// mount under the same resource path below, so those URLs route back
+		// through the portal on the mcp subdomain.
+		BaseURL: a.baseURL + a.resourcePath,
 	})
 	if err != nil {
 		return fmt.Errorf("mcp: build hosted server: %w", err)
@@ -160,6 +168,17 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 	// only permits Content-Type and Authorization, which would fail preflight.
 	mcpCORS := mcpCORSConfig()
 	mcpHandler := echo.WrapHandler(handler)
+
+	// The pinner byte-route coordinators mount their token-gated handlers at
+	// /upload/ and /download/ on the embedded mux root (see mcpembed.New).
+	// Serve them under the MCP resource path so the presigned URLs the hosted
+	// agent mints resolve through the portal on the mcp subdomain; StripPrefix
+	// rewrites /mcp/upload/<token> -> /upload/<token> for the mux. The
+	// coordinators answer their own CORS (the token-gated routes reflect any
+	// Origin and allow the Upload-* preflight headers via transferCORS), so no
+	// portal-level CORS config is attached to these routes.
+	byteHandler := echo.WrapHandler(http.StripPrefix(a.resourcePath, handler))
+
 	routes := router.DefineRoutes(
 		router.NewRoute(http.MethodGet, a.resourcePath, mcpHandler,
 			router.WithAccess(""),
@@ -187,6 +206,39 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 			router.WithSwagger(
 				router.WithSummary("MCP streamable HTTP endpoint (CORS preflight)"),
 				router.WithDescription("Answers CORS preflight for cross-origin MCP clients."),
+				router.WithTags("MCP"),
+			),
+		),
+		// The MCP server's out-of-band IPFS byte routes: the presigned upload
+		// PUT (/mcp/upload/<token>) and filedrop GET (/mcp/download/<token>)
+		// mount under the resource path (matching the BaseURL they mint against
+		// above). They are token-gated (unguessable, expiring, single-use), so
+		// like /mcp they carry no portal access role and enforce their own CORS
+		// at the handler level via transferCORS — reflecting any Origin and
+		// allowing the Upload-* preflight headers a browser PUT needs.
+		router.NewRoute(http.MethodPut, a.resourcePath+"/*", byteHandler,
+			router.WithAccess(""),
+			router.WithSwagger(
+				router.WithSummary("MCP presigned upload PUT"),
+				router.WithDescription("Streams file bytes to a minted one-time upload endpoint under the MCP resource path."),
+				router.WithTags("MCP"),
+			),
+		),
+		router.NewRoute(http.MethodGet, a.resourcePath+"/*", byteHandler,
+			router.WithAccess(""),
+			router.WithSwagger(
+				router.WithSummary("MCP filedrop GET"),
+				router.WithDescription("Serves a one-time filedrop download under the MCP resource path."),
+				router.WithTags("MCP"),
+			),
+		),
+		// CORS preflight for the token-gated byte routes; the coordinators
+		// answer it with their upload/download method and header allow-lists.
+		router.NewRoute(http.MethodOptions, a.resourcePath+"/*", byteHandler,
+			router.WithAccess(""),
+			router.WithSwagger(
+				router.WithSummary("MCP byte routes (CORS preflight)"),
+				router.WithDescription("Answers CORS preflight for the MCP upload/download byte routes."),
 				router.WithTags("MCP"),
 			),
 		),
