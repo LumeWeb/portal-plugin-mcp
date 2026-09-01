@@ -215,8 +215,12 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 		// above). They are token-gated (unguessable, expiring, single-use), so
 		// like /mcp they carry no portal access role and enforce their own CORS
 		// at the handler level via transferCORS — reflecting any Origin and
-		// allowing the Upload-* preflight headers a browser PUT needs.
-		router.NewRoute(http.MethodPut, a.resourcePath+"/*", byteHandler,
+		// allowing the Upload-* preflight headers a browser PUT needs. The
+		// wildcards are scoped to exactly the /upload/ and /download/ prefixes
+		// so no other path under the resource path is forwarded to the byte
+		// handlers, and the exact /mcp streamable endpoint stays the only OAuth-
+		// gated surface on the resource path.
+		router.NewRoute(http.MethodPut, a.resourcePath+"/upload/*", byteHandler,
 			router.WithAccess(""),
 			router.WithSwagger(
 				router.WithSummary("MCP presigned upload PUT"),
@@ -224,7 +228,28 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 				router.WithTags("MCP"),
 			),
 		),
-		router.NewRoute(http.MethodGet, a.resourcePath+"/*", byteHandler,
+		// A wrong method on the upload route is answered by the coordinator
+		// (405 + Allow: PUT) rather than a router 404, so an upload token never
+		// silently resolves to a different surface.
+		router.NewRoute(http.MethodGet, a.resourcePath+"/upload/*", byteHandler,
+			router.WithAccess(""),
+			router.WithSwagger(
+				router.WithSummary("MCP presigned upload (method guard)"),
+				router.WithDescription("Rejects non-PUT methods on the presigned upload endpoint with 405."),
+				router.WithTags("MCP"),
+			),
+		),
+		// CORS preflight for the token-gated upload route; the coordinator
+		// answers it with the upload method and header allow-list.
+		router.NewRoute(http.MethodOptions, a.resourcePath+"/upload/*", byteHandler,
+			router.WithAccess(""),
+			router.WithSwagger(
+				router.WithSummary("MCP presigned upload (CORS preflight)"),
+				router.WithDescription("Answers CORS preflight for the MCP presigned upload byte route."),
+				router.WithTags("MCP"),
+			),
+		),
+		router.NewRoute(http.MethodGet, a.resourcePath+"/download/*", byteHandler,
 			router.WithAccess(""),
 			router.WithSwagger(
 				router.WithSummary("MCP filedrop GET"),
@@ -232,13 +257,13 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 				router.WithTags("MCP"),
 			),
 		),
-		// CORS preflight for the token-gated byte routes; the coordinators
-		// answer it with their upload/download method and header allow-lists.
-		router.NewRoute(http.MethodOptions, a.resourcePath+"/*", byteHandler,
+		// CORS preflight for the token-gated filedrop route; the coordinator
+		// answers it with the download method and header allow-list.
+		router.NewRoute(http.MethodOptions, a.resourcePath+"/download/*", byteHandler,
 			router.WithAccess(""),
 			router.WithSwagger(
-				router.WithSummary("MCP byte routes (CORS preflight)"),
-				router.WithDescription("Answers CORS preflight for the MCP upload/download byte routes."),
+				router.WithSummary("MCP filedrop (CORS preflight)"),
+				router.WithDescription("Answers CORS preflight for the MCP filedrop byte route."),
 				router.WithTags("MCP"),
 			),
 		),

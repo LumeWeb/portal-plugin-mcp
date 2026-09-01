@@ -270,3 +270,15 @@ func TestMCPByteRouteCORSPreflight(t *testing.T) {
 		require.Contains(t, allowHeaders, "upload-length")
 	}, getMCPAPITestOptions())
 }
+
+// TestMCPStreamableGETStillOAuthGated guards against the byte routes shadowing
+// the exact /mcp streamable endpoint: GET /mcp must still require the OAuth
+// bearer gate (401 + invalid_token challenge), never bypass it to the
+// token-gated byte handlers.
+func TestMCPStreamableGETStillOAuthGated(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		rec := request(t, ctx, http.MethodGet, "/mcp", nil)
+		require.Equal(t, http.StatusUnauthorized, rec.Code)
+		require.Contains(t, rec.Header().Get("WWW-Authenticate"), `error="invalid_token"`)
+	}, getMCPAPITestOptions())
+}
