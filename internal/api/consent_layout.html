@@ -25,6 +25,9 @@
       --color-high-contrast-text:      #F8F8F8;
       --color-muted-text:              #A9B5B3;
 
+      --color-link:                    #55CDB8;
+      --color-link-hover:              #ABEEDB;
+
       --color-destructive:             #EF4343;
       --color-destructive-foreground:  #DC2828;
 
@@ -137,6 +140,29 @@
       font-size: 0.8125rem;
       color: var(--color-muted-text);
       line-height: 1.5;
+    }
+
+    .helper-text a:any-link {
+      color: var(--color-link);
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+      text-decoration-color: rgba(85, 205, 184, 0.55);
+    }
+
+    .helper-text a:hover {
+      color: var(--color-link-hover);
+      text-decoration-color: var(--color-link-hover);
+    }
+
+    .helper-text a:visited {
+      color: var(--color-link);
+    }
+
+    .helper-text a:focus-visible {
+      outline: 2px solid var(--color-hovered-element-border);
+      outline-offset: 2px;
+      border-radius: 2px;
     }
 
     .actions {
