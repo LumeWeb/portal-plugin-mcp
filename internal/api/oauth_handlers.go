@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/labstack/echo/v4"
+	"go.lumeweb.com/httputil"
 	"go.lumeweb.com/oauth"
 	mcontext "go.lumeweb.com/portal-middleware/context"
 	portalservice "go.lumeweb.com/portal/service"
@@ -82,10 +83,83 @@ func (e *OAuthExtension) handleASMetadata(w http.ResponseWriter, r *http.Request
 	}
 	e.logDebug("serving authorization-server metadata")
 	base := strings.TrimRight(e.baseURL, "/")
+	// Pin the issuer to the dashboard base URL (the origin actually serving
+	// these endpoints) so the document is internally consistent: OIDC Core 1.0
+	// requires issuer to match the endpoint origin. The portal's configured AS
+	// issuer (oauth.issuer) can differ, but these routes are served from the
+	// dashboard subdomain, not the configured issuer.
+	meta.Issuer = base
 	meta.AuthorizationEndpoint = base + "/api/auth/oauth/authorize"
 	meta.TokenEndpoint = base + "/api/auth/oauth/token"
 	meta.RegistrationEndpoint = base + "/api/auth/oauth/register"
 	writeJSON(w, http.StatusOK, meta)
+}
+
+// handleOpenIDConfig serves the OpenID Connect Discovery 1.0 document. It
+// mirrors the RFC 8414 authorization-server metadata and adds the OpenID-
+// specific fields and the JWKS location, so discovery-using MCP clients can
+// resolve the endpoints and verification keys without special-casing the
+// portal.
+func (e *OAuthExtension) handleOpenIDConfig(c echo.Context) error {
+	ctx := httputil.Context(c)
+
+	// Mirror the authorization-server metadata availability: when the OAuth
+	// provider is disabled there is no issuer to advertise, so report the
+	// document as unavailable rather than leaking a misleading generic 500.
+	if _, err := e.oauthSvc.Metadata(c.Request().Context()); err != nil {
+		if errors.Is(err, portalservice.ErrOAuthDisabled) {
+			e.logDebug("openid-configuration unavailable: oauth provider disabled")
+			return ctx.Error(NewError(ErrAuthorizationServerUnavailable, err), http.StatusNotFound)
+		}
+		e.logDebug("failed to build openid-configuration", zap.Error(err))
+		return ctx.Error(NewError(ErrOAuthServerError, err), http.StatusInternalServerError)
+	}
+	// Pin the issuer to the dashboard base URL where this document and its
+	// endpoints are actually served. handleASMetadata also normalizes its
+	// issuer to this base, so both discovery documents always agree.
+	base := strings.TrimRight(e.baseURL, "/")
+	return ctx.JSON(http.StatusOK, openIDConfig{
+		Issuer:                base,
+		AuthorizationEndpoint: base + "/api/auth/oauth/authorize",
+		TokenEndpoint:         base + "/api/auth/oauth/token",
+		RegistrationEndpoint:  base + "/api/auth/oauth/register",
+		JwksURI:               base + "/.well-known/jwks.json",
+		ResponseTypesSupported: []string{
+			"code",
+		},
+		GrantTypesSupported: []string{
+			"authorization_code",
+			"refresh_token",
+		},
+		SubjectTypesSupported: []string{
+			"public",
+		},
+		IdTokenSigningAlgValuesSupported: []string{
+			"EdDSA",
+		},
+		TokenEndpointAuthMethodsSupported: []string{
+			"none",
+		},
+		CodeChallengeMethodsSupported: []string{
+			"S256",
+		},
+		ScopesSupported: []string{
+			"offline_access",
+		},
+	})
+}
+
+// handleJWKS serves the RFC 7517 JSON Web Key Set for the portal's Ed25519
+// identity key, referenced by the OpenID Connect discovery document.
+//
+// Note on key source: the portal's OAuth bearer tokens (go.lumeweb.com/oauth)
+// are opaque, not JWT-signed, so this JWKS does not verify OAuth access tokens.
+// It advertises the portal's Ed25519 identity key (Core.Identity), which is the
+// key the portal signs its own JWTs with (EdDSA), so OIDC clients verifying
+// portal-signed tokens can resolve it. The identity key is confirmed via
+// config at startup; there is no JWKS method on the OAuth provider interface.
+func (e *OAuthExtension) handleJWKS(c echo.Context) error {
+	return c.JSON(http.StatusOK, ed25519KeySet(e.publicKey))
 }
 
 // handleAuthorizeGET renders the OAuth consent page for an authenticated

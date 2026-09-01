@@ -59,6 +59,37 @@ func TestMCPProtectedResourceMetadata(t *testing.T) {
 	}, getMCPAPITestOptions())
 }
 
+func TestMCPProtectedResourceCORS(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		mcpOAuth(ctx).EXPECT().ProtectedResourceMetadata(mock.Anything, mock.Anything).
+			Return(&oauth.ProtectedResourceMetadata{Resource: mcpResource}, nil)
+
+		// GET with an Origin reflects the requesting origin back so cross-origin
+		// browser MCP clients can read the discovery document.
+		req := ctx.NewAPIRequest(http.MethodGet, "/.well-known/oauth-protected-resource", nil)
+		req.Header.Set("Origin", "http://localhost:5173")
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Equal(t, "http://localhost:5173", rec.Header().Get("Access-Control-Allow-Origin"))
+
+		// The OPTIONS preflight is answered (204), never 405, and the discovery
+		// method/headers a browser probes are allowed (echoed back).
+		pre := ctx.NewAPIRequest(http.MethodOptions, "/.well-known/oauth-protected-resource", nil)
+		pre.Header.Set("Origin", "http://localhost:5173")
+		pre.Header.Set("Access-Control-Request-Method", http.MethodGet)
+		pre.Header.Set("Access-Control-Request-Headers", "accept, mcp-protocol-version")
+		preRec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(preRec, pre)
+		require.Equal(t, http.StatusNoContent, preRec.Code)
+		allowMethods := strings.ToLower(preRec.Header().Get("Access-Control-Allow-Methods"))
+		require.Contains(t, allowMethods, "get")
+		allowHeaders := strings.ToLower(preRec.Header().Get("Access-Control-Allow-Headers"))
+		require.Contains(t, allowHeaders, "accept")
+		require.Contains(t, allowHeaders, "mcp-protocol-version")
+	}, getMCPAPITestOptions())
+}
+
 func TestMCPProtectedResourceMetadataNotRegistered(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		mcpOAuth(ctx).EXPECT().ProtectedResourceMetadata(mock.Anything, mock.Anything).

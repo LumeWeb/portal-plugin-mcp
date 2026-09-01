@@ -185,13 +185,27 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 		// RFC 9728 protected-resource metadata; MCP clients discover the
 		// authorization server from this document. The RFC 8414 authorization-
 		// server metadata is served by the dashboard API extension at the issuer
-		// URL.
+		// URL. CORS (wildcard origin, GET/OPTIONS) is served on the GET handler
+		// itself and on the OPTIONS preflight route below, so cross-origin
+		// browser MCP clients can fetch it during discovery.
 		router.NewRoute(http.MethodGet, "/.well-known/oauth-protected-resource",
 			echo.WrapHandler(a.protectedResourceHandler()),
 			router.WithAccess(""),
+			router.WithCors(discoveryCORSConfig()),
 			router.WithSwagger(
 				router.WithSummary("OAuth protected-resource metadata"),
 				router.WithDescription("RFC 9728 protected-resource metadata describing the MCP server resource."),
+				router.WithTags("MCP"),
+			),
+		),
+		// CORS preflight for the protected-resource metadata endpoint.
+		router.NewRoute(http.MethodOptions, "/.well-known/oauth-protected-resource",
+			discoveryPreflight,
+			router.WithAccess(""),
+			router.WithCors(discoveryCORSConfig()),
+			router.WithSwagger(
+				router.WithSummary("OAuth protected-resource metadata (CORS preflight)"),
+				router.WithDescription("Answers CORS preflight for the protected-resource metadata endpoint."),
 				router.WithTags("MCP"),
 			),
 		),
