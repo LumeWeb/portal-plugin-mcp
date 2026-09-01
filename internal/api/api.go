@@ -209,6 +209,32 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 				router.WithTags("MCP"),
 			),
 		),
+		// Serve the same protected-resource metadata under the resource path's
+		// directory too, so clients that resolve the resource identifier
+		// /.well-known/oauth-protected-resource/mcp (mirroring the /mcp server
+		// path) get the identical document. The bearer challenge in the 401
+		// continues to advertise the root PRM URL.
+		router.NewRoute(http.MethodGet, "/.well-known/oauth-protected-resource/mcp",
+			a.protectedResourceHandler(),
+			router.WithAccess(""),
+			router.WithCors(discoveryCORSConfig()),
+			router.WithSwagger(
+				router.WithSummary("OAuth protected-resource metadata (resource path)"),
+				router.WithDescription("RFC 9728 protected-resource metadata describing the MCP server resource."),
+				router.WithTags("MCP"),
+			),
+		),
+		// CORS preflight for the resource-path protected-resource metadata.
+		router.NewRoute(http.MethodOptions, "/.well-known/oauth-protected-resource/mcp",
+			discoveryPreflight,
+			router.WithAccess(""),
+			router.WithCors(discoveryCORSConfig()),
+			router.WithSwagger(
+				router.WithSummary("OAuth protected-resource metadata (resource path, CORS preflight)"),
+				router.WithDescription("Answers CORS preflight for the resource-path protected-resource metadata endpoint."),
+				router.WithTags("MCP"),
+			),
+		),
 		// Serve the MCP subdomain root as a permanent (308) redirect to the MCP
 		// resource path, so users can reach the endpoint without appending /mcp.
 		router.NewRoute(http.MethodGet, "/",

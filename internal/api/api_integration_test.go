@@ -59,6 +59,26 @@ func TestMCPProtectedResourceMetadata(t *testing.T) {
 	}, getMCPAPITestOptions())
 }
 
+// TestMCPProtectedResourceMetadataResourcePath guards the resource-path alias
+// of the RFC 9728 metadata: /.well-known/oauth-protected-resource/mcp (which
+// mirrors the /mcp server path) must serve the identical document as the root
+// PRM endpoint, since some clients resolve the resource identifier under the
+// resource path's directory.
+func TestMCPProtectedResourceMetadataResourcePath(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		mcpOAuth(ctx).EXPECT().ProtectedResourceMetadata(mock.Anything, mock.Anything).
+			Return(&oauth.ProtectedResourceMetadata{
+				Resource:             "https://mcp.example.com/mcp",
+				ScopesSupported:      []string{"offline_access"},
+				AuthorizationServers: []string{"https://dashboard.example.com"},
+			}, nil)
+
+		rec := request(t, ctx, http.MethodGet, "/.well-known/oauth-protected-resource/mcp", nil)
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Body.String(), "https://mcp.example.com/mcp")
+	}, getMCPAPITestOptions())
+}
+
 func TestMCPProtectedResourceCORS(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		mcpOAuth(ctx).EXPECT().ProtectedResourceMetadata(mock.Anything, mock.Anything).
@@ -116,7 +136,11 @@ func TestMCPEndpointUnauthorized(t *testing.T) {
 		rec := request(t, ctx, http.MethodPost, "/mcp", []byte(`{}`))
 		require.Equal(t, http.StatusUnauthorized, rec.Code)
 		require.Contains(t, rec.Header().Get("WWW-Authenticate"), `error="invalid_token"`)
-		require.Contains(t, rec.Header().Get("WWW-Authenticate"), "oauth-protected-resource")
+		// The bearer challenge must keep advertising the root PRM URL (not the
+		// resource-path alias), so unauthenticated clients always discover the
+		// metadata from the canonical location.
+		require.Contains(t, rec.Header().Get("WWW-Authenticate"),
+			`resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"`)
 	}, getMCPAPITestOptions())
 }
 
