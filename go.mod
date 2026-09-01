@@ -7,8 +7,9 @@ require (
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/stretchr/testify v1.12.1
+	go.lumeweb.com/httputil v0.5.8
 	go.lumeweb.com/oauth v0.1.5
-	go.lumeweb.com/pinner-cli v0.2.2-0.20260831050644-2196916e9dd4
+	go.lumeweb.com/pinner-cli v0.2.2-0.20260901034929-6544347108a5
 	go.lumeweb.com/portal v0.5.2-0.20260901033111-4780b61cb79a
 	go.lumeweb.com/portal-middleware v0.3.7
 	go.lumeweb.com/portal-router v0.7.7
@@ -296,7 +297,6 @@ require (
 	go.lumeweb.com/configmanager v0.3.30 // indirect
 	go.lumeweb.com/event/v2 v2.1.0 // indirect
 	go.lumeweb.com/gswagger v0.20.12 // indirect
-	go.lumeweb.com/httputil v0.5.8 // indirect
 	go.lumeweb.com/ipfs-content v0.1.18 // indirect
 	go.lumeweb.com/ipfs-sdk v0.1.89 // indirect
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64 // indirect
