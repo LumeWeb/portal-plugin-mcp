@@ -102,26 +102,6 @@ func NewAPI() (core.API, []core.ContextBuilderOption, error) {
 			api.identityKey = coreCfg.Identity.PrivateKey()
 			api.domain = coreCfg.Domain
 
-			// Register this MCP server as a protected resource so the OAuth
-			// provider can issue tokens for it (RFC 8707) and serve its
-			// RFC 9728 protected-resource metadata.
-			if err := api.oauthSvc.RegisterResource(ctx, core.OAuthProtectedResource{
-				ResourceURL: api.resourceURL,
-				Scopes:      api.scopes,
-				DisplayName: "Portal MCP Server",
-			}); err != nil {
-				// MCP is unusable without OAuth. When the provider is disabled
-				// (oauth.enabled=false) fail closed: skip registration and let
-				// the OAuth middleware deny all MCP requests, rather than taking
-				// down the whole portal.
-				if errors.Is(err, portalservice.ErrOAuthDisabled) {
-					ctx.Logger().Warn("mcp: oauth provider disabled; MCP endpoint unavailable",
-						zap.Error(err))
-					return nil
-				}
-				return fmt.Errorf("mcp: register resource: %w", err)
-			}
-
 			return nil
 		}),
 	)
@@ -168,6 +148,29 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 	echoRouter.GET("/.well-known/oauth-protected-resource", echo.WrapHandler(a.protectedResourceHandler()))
 
 	echoRouter.GET("/healthz", echo.WrapHandler(http.HandlerFunc(healthzHandler)))
+
+	// Register this MCP server as a protected resource so the OAuth provider
+	// can issue tokens for it (RFC 8707) and serve its RFC 9728
+	// protected-resource metadata. This runs in Configure (not the startup
+	// func) because the provider service reports ErrOAuthDisabled until its own
+	// startup func has built the AuthorizationServer; Configure runs after all
+	// startup funcs complete, so registration is reliable.
+	if err := a.oauthSvc.RegisterResource(a.Context(), core.OAuthProtectedResource{
+		ResourceURL: a.resourceURL,
+		Scopes:      a.scopes,
+		DisplayName: "Portal MCP Server",
+	}); err != nil {
+		// MCP is unusable without OAuth. When the provider is disabled
+		// (oauth.enabled=false) fail closed: skip registration and let the OAuth
+		// middleware deny all MCP requests, rather than taking down the whole
+		// portal.
+		if errors.Is(err, portalservice.ErrOAuthDisabled) {
+			a.Context().Logger().Warn("mcp: oauth provider disabled; MCP endpoint unavailable",
+				zap.Error(err))
+			return nil
+		}
+		return fmt.Errorf("mcp: register resource: %w", err)
+	}
 
 	return nil
 }
