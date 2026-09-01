@@ -25,8 +25,39 @@ import (
 type consentPageData struct {
 	ClientID   string
 	ClientName string
-	Resource   string
-	Scope      string
+	// ClientURI is the client's metadata document URL (RFC 9291), surfaced so
+	// the resource owner can see which publisher is requesting access. It is
+	// empty for clients that do not publish a CIMD document.
+	ClientURI string
+	Resource  string
+	Scope     string
+}
+
+// displayClientURI returns the client's client_uri for the consent page, but
+// only when it is an absolute http(s) URL. client_uri can be influenced by the
+// connecting client (it is persisted from a CIMD document the client
+// publishes), so surfacing it unvalidated in an href could let a
+// javascript:/data: scheme execute in the resource owner's browser. Any other
+// value (empty, non-URL, non-http scheme, missing host) yields "" so the
+// consent page renders no link. It is a best-effort read of the persisted
+// client metadata — never an outbound CIMD fetch — so an unknown client
+// simply yields "".
+func (e *OAuthExtension) displayClientURI(ctx context.Context, clientID string) string {
+	if clientID == "" {
+		return ""
+	}
+	client, err := e.oauthSvc.GetClientMetadata(ctx, clientID)
+	if err != nil {
+		return ""
+	}
+	u, err := url.Parse(client.ClientURI)
+	if err != nil {
+		return ""
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return ""
+	}
+	return client.ClientURI
 }
 
 // layoutData is the shared layout wrapper for the embedded consent templates.
@@ -202,6 +233,7 @@ func (e *OAuthExtension) handleAuthorizeGET(c echo.Context) error {
 		PageData: consentPageData{
 			ClientID:   req.ClientID,
 			ClientName: clientName,
+			ClientURI:  e.displayClientURI(c.Request().Context(), req.ClientID),
 			Resource:   req.Resource,
 			Scope:      req.Scope,
 		},

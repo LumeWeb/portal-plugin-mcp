@@ -172,6 +172,30 @@ func TestOAuthAuthorizeGET_AuthenticatedRendersConsent(t *testing.T) {
 		require.Contains(t, rec.Body.String(), "An application wants to connect")
 		require.NotContains(t, rec.Body.String(), "client_abc")
 		require.Contains(t, rec.Body.String(), "Approve")
+		require.NotContains(t, rec.Body.String(), "Publisher:")
+	}, getOAuthExtensionTestOptions())
+}
+
+func TestOAuthAuthorizeGET_ClientURIValidHTTPSurfaced(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		token, _ := coreTesting.NewJWTHelper(ctx).CreateLoginToken(1)
+		q := url.Values{"response_type": {"code"}, "client_id": {"uri-client"}}
+		oauthExt(ctx).EXPECT().ValidateAuthorizeRequest(mock.Anything, mock.Anything).Return(nil)
+		// Only an absolute http(s) client_uri is rendered as a link.
+		oauthExt(ctx).EXPECT().GetClientMetadata(mock.Anything, "uri-client").Return(&oauth.Client{
+			ClientID:  "uri-client",
+			ClientURI: "https://publisher.example/oauth-client.json",
+		}, nil)
+
+		req := ctx.NewAPIRequest(http.MethodGet, "/api/auth/oauth/authorize?"+q.Encode(), nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		body := rec.Body.String()
+		require.Contains(t, body, "Publisher:")
+		require.Contains(t, body, "https://publisher.example/oauth-client.json")
 	}, getOAuthExtensionTestOptions())
 }
 
