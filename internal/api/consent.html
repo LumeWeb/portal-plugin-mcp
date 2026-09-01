@@ -21,7 +21,7 @@
 
   <div class="info-section">
     <p class="info-text">This client requested access to your portal account.</p>
-    {{if .ClientURI}}<p class="helper-text">Publisher: <a href="{{.ClientURI}}" target="_blank" rel="noopener noreferrer" style="word-break:break-all">{{.ClientURI}}</a></p>{{end}}
+    {{if .ClientURI}}<p class="helper-text">Publisher: <a href="{{.ClientURI}}" target="_blank" rel="noopener noreferrer">{{.ClientDomain}}</a></p>{{end}}
     {{if .Resource}}<p class="helper-text">Resource: <span style="word-break:break-all">{{.Resource}}</span></p>{{end}}
     {{if .Scope}}<p class="helper-text">Requested scopes: {{.Scope}}</p>{{end}}
   </div>

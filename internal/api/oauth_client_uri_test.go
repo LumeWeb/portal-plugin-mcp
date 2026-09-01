@@ -53,3 +53,20 @@ func TestDisplayClientURI(t *testing.T) {
 		})
 	}
 }
+
+func TestClientURIHost(t *testing.T) {
+	for _, tt := range []struct {
+		in   string
+		want string
+	}{
+		{"https://publisher.example/oauth-client.json", "publisher.example"},
+		{"https://www.mcpjam.com/.well-known/oauth/client-metadata.json", "www.mcpjam.com"},
+		{"http://mcp.example:8080/md", "mcp.example:8080"},
+		{"", ""},
+		{"not a url", ""},
+	} {
+		if got := clientURIHost(tt.in); got != tt.want {
+			t.Errorf("clientURIHost(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}

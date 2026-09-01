@@ -29,8 +29,12 @@ type consentPageData struct {
 	// the resource owner can see which publisher is requesting access. It is
 	// empty for clients that do not publish a CIMD document.
 	ClientURI string
-	Resource  string
-	Scope     string
+	// ClientDomain is the host portion of ClientURI, shown as the publisher
+	// link text so resource owners see a recognizable publisher instead of the
+	// raw metadata JSON URL.
+	ClientDomain string
+	Resource     string
+	Scope        string
 }
 
 // displayClientURI returns the client's client_uri for the consent page, but
@@ -58,6 +62,17 @@ func (e *OAuthExtension) displayClientURI(ctx context.Context, clientID string) 
 		return ""
 	}
 	return client.ClientURI
+}
+
+// clientURIHost extracts the host portion of an already-validated client_uri
+// for display as the publisher link text. It returns "" for a value that is
+// not a parseable URL so the template renders nothing.
+func clientURIHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Host
 }
 
 // layoutData is the shared layout wrapper for the embedded consent templates.
@@ -226,6 +241,7 @@ func (e *OAuthExtension) handleAuthorizeGET(c echo.Context) error {
 	}
 
 	clientName := e.clientDisplayName(c.Request().Context(), req.ClientID)
+	clientURI := e.displayClientURI(c.Request().Context(), req.ClientID)
 	e.logDebug("rendering consent page",
 		zap.String("client_id", req.ClientID),
 		zap.String("client_name", clientName),
@@ -238,11 +254,12 @@ func (e *OAuthExtension) handleAuthorizeGET(c echo.Context) error {
 		AriaDescribedBy: "consent-description",
 		MetaDescription: "Authorize a MCP client to access your portal account",
 		PageData: consentPageData{
-			ClientID:   req.ClientID,
-			ClientName: clientName,
-			ClientURI:  e.displayClientURI(c.Request().Context(), req.ClientID),
-			Resource:   req.Resource,
-			Scope:      req.Scope,
+			ClientID:     req.ClientID,
+			ClientName:   clientName,
+			ClientURI:    clientURI,
+			ClientDomain: clientURIHost(clientURI),
+			Resource:     req.Resource,
+			Scope:        req.Scope,
 		},
 	})
 }

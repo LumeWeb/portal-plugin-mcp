@@ -227,7 +227,10 @@ func TestOAuthAuthorizeGET_ClientURIValidHTTPSurfaced(t *testing.T) {
 		require.Equal(t, http.StatusOK, rec.Code)
 		body := rec.Body.String()
 		require.Contains(t, body, "Publisher:")
-		require.Contains(t, body, "https://publisher.example/oauth-client.json")
+		// The href keeps the full metadata URL; the link text is the domain.
+		require.Contains(t, body, `href="https://publisher.example/oauth-client.json"`)
+		require.Contains(t, body, ">publisher.example</a>")
+		require.NotContains(t, body, ">https://publisher.example/oauth-client.json</a>")
 	}, getOAuthExtensionTestOptions())
 }
 
