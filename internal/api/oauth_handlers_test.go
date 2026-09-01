@@ -34,16 +34,17 @@ func TestRenderConsentPage(t *testing.T) {
 		AriaLabelledBy:  "consent-heading",
 		AriaDescribedBy: "consent-description",
 		PageData: consentPageData{
-			ClientID: "client_abc",
-			Resource: "https://mcp.example.com/mcp",
-			Scope:    "offline_access",
+			ClientID:   "client_abc",
+			ClientName: "MCP Inspector",
+			Resource:   "https://mcp.example.com/mcp",
+			Scope:      "offline_access",
 		},
 	})
 
 	body := w.Body.String()
 	for _, want := range []string{
-		"Authorize —",
-		"client_abc",
+		"Authorize — MCP Inspector",
+		"MCP Inspector wants to connect to your account",
 		"MCP client",
 		"https://mcp.example.com/mcp",
 		`data-action="approve"`,
@@ -52,6 +53,38 @@ func TestRenderConsentPage(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("consent page missing %q", want)
 		}
+	}
+	// The opaque client_id must never appear in user-facing copy.
+	if strings.Contains(body, "client_abc") {
+		t.Errorf("consent page must not render client_id, got %q", "client_abc")
+	}
+}
+
+func TestRenderConsentPageFallback(t *testing.T) {
+	w := httptest.NewRecorder()
+	_ = consentTemplate.ExecuteTemplate(w, "consent", layoutData{
+		AriaLabelledBy:  "consent-heading",
+		AriaDescribedBy: "consent-description",
+		PageData: consentPageData{
+			ClientID: "client_abc",
+			Resource: "https://mcp.example.com/mcp",
+			Scope:    "offline_access",
+		},
+	})
+
+	body := w.Body.String()
+	for _, want := range []string{
+		"An application wants to connect",
+		"Authorize — Application",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("consent page fallback missing %q", want)
+		}
+	}
+	// The opaque client_id must never appear in user-facing copy, even when
+	// no display name is known.
+	if strings.Contains(body, "client_abc") {
+		t.Errorf("consent page fallback must not render client_id, got %q", "client_abc")
 	}
 }
 

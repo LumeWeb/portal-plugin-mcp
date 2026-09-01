@@ -1,4 +1,4 @@
-{{define "page-title"}}Authorize — {{.ClientID}}{{end}}
+{{define "page-title"}}Authorize — {{if .ClientName}}{{.ClientName}}{{else}}Application{{end}}{{end}}
 
 {{define "page-content"}}
 <div id="consent-form">
@@ -9,7 +9,11 @@
         <path d="M7 11V7a5 5 0 0110 0v4"></path>
       </svg>
     </div>
-    <h1 class="app-name" id="consent-heading">{{.ClientID}}</h1>
+    {{if .ClientName}}
+    <h1 class="app-name" id="consent-heading">{{.ClientName}} wants to connect to your account</h1>
+    {{else}}
+    <h1 class="app-name" id="consent-heading">An application wants to connect</h1>
+    {{end}}
     <p class="app-description" id="consent-description">MCP client</p>
   </div>
 

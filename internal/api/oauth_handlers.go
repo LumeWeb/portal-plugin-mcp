@@ -2,6 +2,7 @@ package api
 
 import (
 	_ "embed"
+	"context"
 	"encoding/json"
 	"errors"
 	"html/template"
@@ -17,10 +18,14 @@ import (
 )
 
 // consentPageData carries the data rendered into the OAuth consent page.
+// ClientID is deliberately not rendered anywhere user-facing; it is kept in
+// the authorize query string and logs only. ClientName drives the heading, and
+// falls back to a generic string when no display name is known.
 type consentPageData struct {
-	ClientID string
-	Resource string
-	Scope    string
+	ClientID   string
+	ClientName string
+	Resource   string
+	Scope      string
 }
 
 // layoutData is the shared layout wrapper for the embedded consent templates.
@@ -110,8 +115,10 @@ func (e *OAuthExtension) handleAuthorizeGET(c echo.Context) error {
 		return e.redirectToLogin(c, req.ClientID)
 	}
 
+	clientName := e.clientDisplayName(c.Request().Context(), req.ClientID)
 	e.logDebug("rendering consent page",
 		zap.String("client_id", req.ClientID),
+		zap.String("client_name", clientName),
 		zap.String("resource", req.Resource),
 		zap.String("scope", req.Scope))
 
@@ -121,11 +128,29 @@ func (e *OAuthExtension) handleAuthorizeGET(c echo.Context) error {
 		AriaDescribedBy: "consent-description",
 		MetaDescription: "Authorize a MCP client to access your portal account",
 		PageData: consentPageData{
-			ClientID: req.ClientID,
-			Resource: req.Resource,
-			Scope:    req.Scope,
+			ClientID:   req.ClientID,
+			ClientName: clientName,
+			Resource:   req.Resource,
+			Scope:      req.Scope,
 		},
 	})
+}
+
+// clientDisplayName returns the registered client's display name for the
+// resource-owner-facing consent copy. It reads the client back from durable
+// storage via the OAuth provider so the name survives restarts, and returns an
+// empty string when the client has no stored name (or cannot be read), letting
+// the consent page fall back to a generic heading. The opaque client_id is
+// never surfaced here — it stays in logs and the authorize query string.
+func (e *OAuthExtension) clientDisplayName(ctx context.Context, clientID string) string {
+	client, err := e.oauthSvc.GetClientMetadata(ctx, clientID)
+	if err != nil {
+		e.logDebug("consent client metadata unavailable",
+			zap.String("client_id", clientID),
+			zap.Error(err))
+		return ""
+	}
+	return client.ClientName
 }
 
 // handleAuthorizePOST issues an authorization code after the resource owner
