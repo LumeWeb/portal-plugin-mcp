@@ -216,3 +216,69 @@ func TestMCPEndpointAuthorized(t *testing.T) {
 		require.Empty(t, rec.Header().Get("WWW-Authenticate"))
 	}, getMCPAPITestOptions())
 }
+
+// TestMCPByteRoutesRouteThroughRouter guards the hosted IPFS byte routes: the
+// presigned upload PUT and filedrop GET mount under the MCP resource path
+// (/mcp/upload/..., /mcp/download/...) so a hosted agent's minted URLs resolve
+// through the portal router on the mcp subdomain instead of a loopback temp
+// port. A request that reaches a coordinator returns its own handler response
+// (405 for a wrong method, 404 for an unknown token), never a router-level miss.
+func TestMCPByteRoutesRouteThroughRouter(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		token := strings.Repeat("0", 32)
+
+		// A wrong method on the presigned upload route is answered by the
+		// byte-route coordinator (405 + Allow: PUT), proving the request was
+		// routed past the portal router into the mux handler.
+		rec := request(t, ctx, http.MethodGet, "/mcp/upload/"+token, nil)
+		require.Equal(t, http.StatusMethodNotAllowed, rec.Code)
+		require.Contains(t, rec.Header().Get("Allow"), http.MethodPut)
+
+		// An unknown-token PUT is rejected by the coordinator itself with the
+		// endpoint-invalid body — distinguishable from an unroutable path.
+		rec = request(t, ctx, http.MethodPut, "/mcp/upload/"+token, nil)
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		require.Contains(t, rec.Body.String(), "invalid, expired, or already-used upload endpoint")
+
+		// The filedrop GET is routed to the download coordinator too; an
+		// unknown token 404s there with the filedrop body rather than as a
+		// router miss.
+		rec = request(t, ctx, http.MethodGet, "/mcp/download/"+token, nil)
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		require.Contains(t, rec.Body.String(), "invalid, expired, or already-used download endpoint")
+	}, getMCPAPITestOptions())
+}
+
+// TestMCPByteRouteCORSPreflight guards the token-gated byte routes' CORS:
+// cross-origin browser uploads preflight the PUT, and the coordinator's
+// transferCORS must answer with the upload method and header allow-list (not a
+// router-level 404/405).
+func TestMCPByteRouteCORSPreflight(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		req := ctx.NewAPIRequest(http.MethodOptions, "/mcp/upload/"+strings.Repeat("0", 32), nil)
+		req.Header.Set("Origin", "http://localhost:5173")
+		req.Header.Set("Access-Control-Request-Method", http.MethodPut)
+		req.Header.Set("Access-Control-Request-Headers", "content-type, upload-length")
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNoContent, rec.Code)
+		require.Equal(t, "http://localhost:5173", rec.Header().Get("Access-Control-Allow-Origin"))
+		allowMethods := strings.ToLower(rec.Header().Get("Access-Control-Allow-Methods"))
+		require.Contains(t, allowMethods, strings.ToLower(http.MethodPut))
+		allowHeaders := strings.ToLower(rec.Header().Get("Access-Control-Allow-Headers"))
+		require.Contains(t, allowHeaders, "upload-length")
+	}, getMCPAPITestOptions())
+}
+
+// TestMCPStreamableGETStillOAuthGated guards against the byte routes shadowing
+// the exact /mcp streamable endpoint: GET /mcp must still require the OAuth
+// bearer gate (401 + invalid_token challenge), never bypass it to the
+// token-gated byte handlers.
+func TestMCPStreamableGETStillOAuthGated(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		rec := request(t, ctx, http.MethodGet, "/mcp", nil)
+		require.Equal(t, http.StatusUnauthorized, rec.Code)
+		require.Contains(t, rec.Header().Get("WWW-Authenticate"), `error="invalid_token"`)
+	}, getMCPAPITestOptions())
+}
