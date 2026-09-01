@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
@@ -48,6 +49,9 @@ type API struct {
 	identityKey ed25519.PrivateKey
 	// domain is the portal domain used as the JWT issuer/audience.
 	domain string
+	// portalName is the portal's display name (core.portal_name), used to label
+	// the MCP subdomain landing page. Falls back to the domain when unset.
+	portalName string
 }
 
 func (a *API) ID() string            { return a.Name() }
@@ -102,6 +106,10 @@ func NewAPI() (core.API, []core.ContextBuilderOption, error) {
 			api.secure = true
 			api.identityKey = coreCfg.Identity.PrivateKey()
 			api.domain = coreCfg.Domain
+			api.portalName = coreCfg.PortalName
+			if api.portalName == "" {
+				api.portalName = coreCfg.Domain
+			}
 
 			return nil
 		}),
@@ -235,16 +243,15 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 				router.WithTags("MCP"),
 			),
 		),
-		// Serve the MCP subdomain root as a permanent (308) redirect to the MCP
-		// resource path, so users can reach the endpoint without appending /mcp.
+		// Serve the MCP subdomain root as a server-rendered landing page that
+		// explains what the server is and how to connect an MCP client to the
+		// resource path (/mcp). The MCP endpoint itself never sits at the root.
 		router.NewRoute(http.MethodGet, "/",
-			func(c echo.Context) error {
-				return c.Redirect(http.StatusPermanentRedirect, a.resourcePath)
-			},
+			a.homepageHandler(),
 			router.WithAccess(""),
 			router.WithSwagger(
-				router.WithSummary("MCP subdomain root redirect"),
-				router.WithDescription("Permanently redirects the MCP subdomain root to the MCP resource path."),
+				router.WithSummary("MCP subdomain landing page"),
+				router.WithDescription("Server-rendered setup instructions for connecting an MCP client to the MCP resource path."),
 				router.WithTags("MCP"),
 			),
 		),
@@ -253,6 +260,17 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 	if err := router.RegisterRoutes(gRouter, accessSvc, a.Subdomain(), routes); err != nil {
 		return err
 	}
+
+	// Serve the embedded static assets (the Handlebars runtime the landing page
+	// loads via <script src="/static/...">) with echo's own StaticFS. This
+	// mounts the static/ embed at router.StaticAssetsPath ("/static") with
+	// content-type, range and caching handled by echo, so no bespoke file
+	// handler is needed.
+	staticFs, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		return fmt.Errorf("mcp: open embedded static assets: %w", err)
+	}
+	router.GetRouter(gRouter).StaticFS(router.StaticAssetsPath, staticFs)
 
 	// Register this MCP server as a protected resource so the OAuth provider
 	// can issue tokens for it (RFC 8707) and serve its RFC 9728

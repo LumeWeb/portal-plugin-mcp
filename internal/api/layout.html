@@ -21,6 +21,12 @@
       --color-solid-background:        #12736B;
       --color-hovered-solid-bg:        #15807A;
 
+      --color-accent:                  #12736B;
+      --color-accent-bright:           #20A795;
+      --color-card:                    #111C1B;
+      --color-hovered-card:            #0F2A28;
+      --color-text-subtle:             #7F9B96;
+
       --color-low-contrast-text:       #ABEEDB;
       --color-high-contrast-text:      #F8F8F8;
       --color-muted-text:              #A9B5B3;
@@ -351,7 +357,7 @@
 </head>
 <body>
   <div class="overlay" aria-hidden="true"></div>
-  <main class="card" role="dialog"{{if .AriaLabelledBy}} aria-labelledby="{{.AriaLabelledBy}}"{{end}}{{if .AriaDescribedBy}} aria-describedby="{{.AriaDescribedBy}}"{{end}}>
+  <main class="card"{{if .MainRole}} role="{{.MainRole}}"{{end}}{{if .AriaLabelledBy}} aria-labelledby="{{.AriaLabelledBy}}"{{end}}{{if .AriaDescribedBy}} aria-describedby="{{.AriaDescribedBy}}"{{end}}>
     {{template "page-content" .PageData}}
   </main>
   <footer class="footer">

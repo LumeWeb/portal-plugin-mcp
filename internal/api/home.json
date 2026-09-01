@@ -1,0 +1,142 @@
+{
+  "endpointLabel": "Server address",
+  "portalName": "{{jval .PortalName}}",
+  "resourceURL": "{{jval .ResourceURL}}",
+  "platforms": [
+    {
+      "id": "grok",
+      "label": "Grok",
+      "icon": "grok",
+      "note": "On Grok Business or Enterprise a team admin has to set up the connector in the cloud console before anyone can use it.",
+      "links": [
+        { "label": "Grok help", "href": "https://docs.x.ai/grok/connectors/custom-mcp-tunneling" }
+      ],
+      "steps": [
+        { "title": "Open Grok in your browser", "detail": "Go to grok.com/connectors.", "href": "https://grok.com/connectors", "linkLabel": "Open grok.com/connectors" },
+        { "title": "Sign in", "detail": "Use your Grok account." },
+        {
+          "title": "Create a New Connector",
+          "subSteps": [
+            { "title": "Click New Connector" },
+            { "title": "Choose Custom" }
+          ]
+        },
+        {
+          "title": "Fill in the Custom Connector dialog",
+          "subSteps": [
+            { "title": "Name it", "detail": "Something like {{jval .PortalName}} works." },
+            { "title": "Paste the server link", "detail": "In the Server URL field, from the card above." },
+            { "title": "Click Add Connector", "detail": "Grok saves the connector as soon as it checks the link." }
+          ]
+        },
+        {
+          "title": "Sign in to finish",
+          "subSteps": [
+            { "title": "Sign in with your {{jval .PortalName}} account" },
+            { "title": "Approve access" }
+          ]
+        },
+        { "title": "Start chatting", "detail": "Grok uses {{jval .PortalName}} when you ask it to." }
+      ]
+    },
+    {
+      "id": "claude",
+      "label": "Claude",
+      "icon": "claude",
+      "note": "Custom connectors using remote MCP work on all Claude plans; Free is limited to one. On Team or Enterprise only an owner can add them. You only need a name and the server link; ignore the technical options Claude shows along the way.",
+      "noteSource": { "label": "Claude help", "href": "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp" },
+      "steps": [
+        { "title": "Open Claude's connector settings", "detail": "This link opens the Add custom connector dialog directly.", "href": "https://claude.ai/new?modal=add-custom-connector#settings/customize-connectors", "linkLabel": "Open Claude's connector settings" },
+        {
+          "title": "Fill in the Add custom connector dialog",
+          "subSteps": [
+            { "title": "Name it", "detail": "Something like {{jval .PortalName}} works." },
+            { "title": "Paste the server link", "detail": "In the Remote MCP server URL field, from the card above." },
+            { "title": "Click Continue", "detail": "Claude checks the link and shows the settings it detected." },
+            { "title": "Keep what Claude detected", "detail": "Authentication stays on 'Always required' and OAuth client on 'Use Anthropic's hosted client metadata' (Recommended). Don't add request headers or open Advanced; those are for people building their own servers." },
+            { "title": "Click Add" }
+          ]
+        },
+        {
+          "title": "Allow the {{jval .AllowDomain}} domain",
+          "detail": "Claude won't ask for this, so add it ahead of time in the allowed domains setting.",
+          "subSteps": [
+            { "title": "Open the allowed domains setting", "detail": "In Claude, go to Settings, then the allowed domains list (or your workspace's connector settings).", "href": "https://claude.ai/new#settings/customize-connectors", "linkLabel": "Open Claude's connector settings" },
+            { "title": "Add {{jval .AllowDomain}}", "detail": "Enter the domain exactly as shown on the card above." },
+            { "title": "Save", "detail": "Confirm the change before you continue." }
+          ]
+        },
+        { "title": "Connect and sign in", "detail": "Back on the Connectors page, click Connect on your new connector. If a sign-in page shows extra fields or settings you don't recognize, leave them blank; Claude signs you in with your {{jval .PortalName}} account." }
+      ]
+    },
+    {
+      "id": "chatgpt",
+      "label": "ChatGPT",
+      "icon": "chatgpt",
+      "note": "Custom MCP connectors work on paid ChatGPT plans, including Pro. On Business, Enterprise, and EDU they're in beta, so a workspace admin has to switch on Developer mode and approve the connector before anyone can use it.",
+      "noteSource": { "label": "OpenAI help", "href": "https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt" },
+      "steps": [
+        {
+          "title": "Turn on Developer mode",
+          "subSteps": [
+            { "title": "Turn it on for your account", "detail": "Open Settings, then Apps and Advanced settings, and switch on Developer mode.", "href": "https://chatgpt.com/#settings/Security?section=developer-mode", "linkLabel": "Open ChatGPT Developer mode settings" },
+            { "title": "Workspace with an admin? They enable it", "detail": "In the admin settings: Permissions and roles, Connected data, then the Developer mode switch." }
+          ]
+        },
+        { "title": "Open Apps and create a connector", "detail": "Go to Settings, then Apps, and click Create. The New Plugin dialog opens.", "href": "https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins", "linkLabel": "Open ChatGPT connectors" },
+        {
+          "title": "Fill in the New Plugin dialog",
+          "subSteps": [
+            { "title": "Name it", "detail": "Something like {{jval .PortalName}} works. The icon and description are optional." },
+            { "title": "Paste the server link", "detail": "Under Connection, keep Server URL selected and paste the /mcp link from the card above." },
+            { "title": "Leave Authentication on OAuth", "detail": "ChatGPT discovers these settings on its own once the link is valid. Nothing to enter." },
+            { "title": "Tick the risk checkbox", "detail": "OpenAI warns that custom MCP servers introduce risk. Tick 'I understand and want to continue' to unlock Create." }
+          ]
+        },
+        {
+          "title": "Create and connect",
+          "subSteps": [
+            { "title": "Click Create", "detail": "The connector appears as a draft." },
+            { "title": "Wait for the scan", "detail": "Approve sign-in if it opens." }
+          ]
+        },
+        {
+          "title": "Publish it",
+          "subSteps": [
+            { "title": "Admins: publish it", "detail": "Go to Workspace settings, Apps, Drafts, then Publish." },
+            { "title": "Everyone else: get it approved", "detail": "An admin has to publish before you can use it." }
+          ]
+        },
+        {
+          "title": "Use it in a chat",
+          "subSteps": [
+            { "title": "Start a new chat" },
+            { "title": "Pick the connector from the = menu", "detail": "In the chat, open the = icon's menu and pick the connector." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "other",
+      "label": "Other apps",
+      "icon": "other",
+      "note": "Use the full link that ends in /mcp; the bare address is this help page, not the server. If something fails, try signing in again, or double-check the link and the connection type.",
+      "links": [
+        { "label": "MCP remote guide", "href": "https://modelcontextprotocol.io/docs/2026-07-28/develop/connect-remote-servers" }
+      ],
+      "steps": [
+        { "title": "Add a server", "detail": "Most apps let you add a server under their apps or integrations settings." },
+        {
+          "title": "Choose the web option, paste the link",
+          "subSteps": [
+            { "title": "Pick the web (HTTP) option" },
+            { "title": "Paste the server link", "detail": "From the card above." }
+          ]
+        },
+        { "title": "Sign in when prompted", "detail": "Connecting opens a sign-in page for your {{jval .PortalName}} account." },
+        { "title": "Approve access", "detail": "Allow access so it can connect." },
+        { "title": "Check it works", "detail": "Make sure the tools show up, then use them in a conversation." }
+      ]
+    }
+  ]
+}
