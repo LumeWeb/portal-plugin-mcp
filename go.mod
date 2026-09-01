@@ -9,7 +9,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	go.lumeweb.com/httputil v0.5.8
 	go.lumeweb.com/oauth v0.1.6
-	go.lumeweb.com/pinner-cli v0.2.2-0.20260901045142-cc40b8981495
+	go.lumeweb.com/pinner-cli v0.2.2-0.20260901071414-25349a6ab5d8
 	go.lumeweb.com/portal v0.5.2-0.20260901033111-4780b61cb79a
 	go.lumeweb.com/portal-middleware v0.3.7
 	go.lumeweb.com/portal-router v0.7.7

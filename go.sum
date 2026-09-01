@@ -868,8 +868,8 @@ go.lumeweb.com/ipfs-sdk/dnsname v0.1.64 h1:RTBD+zoXHOYYKreNRoQhyLLKKWp/VgYfr7qoj
 go.lumeweb.com/ipfs-sdk/dnsname v0.1.64/go.mod h1:1++6EWMiG/BC5UQjlIobId2YcWDVHjHEhdsEzeISKpQ=
 go.lumeweb.com/oauth v0.1.6 h1:6c6LrXxMwx5klbq3OshzXjkGwvYVjAQhjX2FxCAgqqg=
 go.lumeweb.com/oauth v0.1.6/go.mod h1:Bfdxi1gkv+Ypj9yj9uOSmKnbZX8C7q7Pyn1OdPyuCbM=
-go.lumeweb.com/pinner-cli v0.2.2-0.20260901045142-cc40b8981495 h1:fTc6Svmxh4jprmTXflUwkXAV9337cF3F0XvPmrjRGxY=
-go.lumeweb.com/pinner-cli v0.2.2-0.20260901045142-cc40b8981495/go.mod h1:FNEtEdH7B/Tj1QSD1RTzzi+eXExemgIYzXlXaD3wchY=
+go.lumeweb.com/pinner-cli v0.2.2-0.20260901071414-25349a6ab5d8 h1:VfQzcUc8CI2zHKwb9RjTPaIAzUyazYQvOdR/2aJ3te8=
+go.lumeweb.com/pinner-cli v0.2.2-0.20260901071414-25349a6ab5d8/go.mod h1:FNEtEdH7B/Tj1QSD1RTzzi+eXExemgIYzXlXaD3wchY=
 go.lumeweb.com/portal v0.5.2-0.20260901033111-4780b61cb79a h1:+q+2KWjZOahq+FbfPwJp/ZYRrHAaTrFs7VQMXAdRbuw=
 go.lumeweb.com/portal v0.5.2-0.20260901033111-4780b61cb79a/go.mod h1:uwlY3PU5oErOoB1mQrJi3MconTDWIFULfrDVuLja2jc=
 go.lumeweb.com/portal-middleware v0.3.7 h1:kq4SZq4T/uhauqHehw2JaTbNJpPpE8/EQAC3R737H7c=
