@@ -1,8 +1,8 @@
 package api
 
 import (
-	_ "embed"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"html/template"
@@ -212,10 +212,17 @@ func (e *OAuthExtension) handleAuthorizeGET(c echo.Context) error {
 	}
 
 	if _, err := mcontext.GetUserID(c); err != nil {
+		// The /app-login page renders the `app` query param as the connecting
+		// application's name. Pass the registered client display name, never
+		// the raw client_id, which can be a client-metadata URL (e.g. mcpjam's
+		// https://.../client-metadata.json) and would otherwise be shown to
+		// the user as the app name.
+		appName := e.clientDisplayName(c.Request().Context(), req.ClientID)
 		e.logDebug("unauthenticated resource owner redirected to login",
 			zap.String("client_id", req.ClientID),
+			zap.String("app_name", appName),
 			zap.String("resource", req.Resource))
-		return e.redirectToLogin(c, req.ClientID)
+		return e.redirectToLogin(c, appName)
 	}
 
 	clientName := e.clientDisplayName(c.Request().Context(), req.ClientID)

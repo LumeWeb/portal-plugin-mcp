@@ -8,10 +8,10 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"go.lumeweb.com/pinner-cli/mcpembed"
+	"go.lumeweb.com/portal-middleware/cors"
 	"go.lumeweb.com/portal-plugin-mcp/internal"
 	pluginConfig "go.lumeweb.com/portal-plugin-mcp/internal/config"
 	"go.lumeweb.com/portal-plugin-mcp/internal/mcp"
-	"go.lumeweb.com/portal-middleware/cors"
 	router "go.lumeweb.com/portal-router"
 	"go.lumeweb.com/portal/config"
 	"go.lumeweb.com/portal/core"
@@ -119,7 +119,7 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 	handler, err := mcpembed.New(mcpembed.Options{
 		// The hosted surface: account/subscription plus IPFS/websites/dns/ipns/
 		// ens/upload operations (never the Sia vault or portal admin).
-		Surface:    mcpembed.SurfaceHosted,
+		Surface:     mcpembed.SurfaceHosted,
 		CatalogDeps: catalogDeps,
 		// Resolve the OAuth-authenticated caller to a per-user Portal API JWT.
 		CredentialResolver: mcp.NewCredentialResolver(a.identityKey, a.domain, 0).WithLogger(a.Logger().Named("mcp.credential")),
