@@ -2,6 +2,23 @@
   "endpointLabel": "Server address",
   "portalName": "{{jval .PortalName}}",
   "resourceURL": "{{jval .ResourceURL}}",
+  "notice": {
+    "title": "Before you connect",
+    "items": [
+      {
+        "label": "What it can access",
+        "text": "The assistant connects with your {{jval .PortalName}} account and can use the same files, uploads, and settings you see when you sign in yourself."
+      },
+      {
+        "label": "What gets shared",
+        "text": "To answer your questions, the assistant may send parts of your conversation to this server, including anything you've typed into the chat. Don't share the link or your account with an app you don't trust."
+      },
+      {
+        "label": "Trust the link",
+        "text": "This is the official {{jval .PortalName}} server, run by LumeWeb. ChatGPT, Claude, and similar apps can't check a server link for you, so only add a link you got from this page."
+      }
+    ]
+  },
   "platforms": [
     {
       "id": "grok",
@@ -33,7 +50,7 @@
           "title": "Sign in to finish",
           "subSteps": [
             { "title": "Sign in with your {{jval .PortalName}} account" },
-            { "title": "Approve access" }
+            { "title": "Approve access", "detail": "Approving lets Grok use your {{jval .PortalName}} account: the same files and settings you see when you sign in yourself." }
           ]
         },
         { "title": "Start chatting", "detail": "Grok uses {{jval .PortalName}} when you ask it to." }
@@ -66,7 +83,7 @@
             { "title": "Save", "detail": "Confirm the change before you continue." }
           ]
         },
-        { "title": "Connect and sign in", "detail": "Back on the Connectors page, click Connect on your new connector. If a sign-in page shows extra fields or settings you don't recognize, leave them blank; Claude signs you in with your {{jval .PortalName}} account." }
+        { "title": "Connect and sign in", "detail": "Back on the Connectors page, click Connect on your new connector. Connecting lets Claude use your {{jval .PortalName}} account: the same files and settings you see when you sign in yourself. If a sign-in page shows extra fields or settings you don't recognize, leave them blank; Claude signs you in with your {{jval .PortalName}} account." }
       ]
     },
     {
@@ -90,7 +107,7 @@
             { "title": "Name it", "detail": "Something like {{jval .PortalName}} works. The icon and description are optional." },
             { "title": "Paste the server link", "detail": "Under Connection, keep Server URL selected and paste the /mcp link from the card above." },
             { "title": "Leave Authentication on OAuth", "detail": "ChatGPT discovers these settings on its own once the link is valid. Nothing to enter." },
-            { "title": "Tick the risk checkbox", "detail": "OpenAI warns that custom MCP servers introduce risk. Tick 'I understand and want to continue' to unlock Create." }
+            { "title": "Tick the risk checkbox", "detail": "ChatGPT shows this because it can't check custom server links; whatever you add, it sends parts of your chats to that server. The link on this page is the official {{jval .PortalName}} server, so this one is safe. Tick 'I understand and want to continue' to unlock Create." }
           ]
         },
         {
@@ -134,7 +151,7 @@
           ]
         },
         { "title": "Sign in when prompted", "detail": "Connecting opens a sign-in page for your {{jval .PortalName}} account." },
-        { "title": "Approve access", "detail": "Allow access so it can connect." },
+        { "title": "Approve access", "detail": "Allow access so it can connect. Approving gives the app your {{jval .PortalName}} account, so only do this for a server link you got from this page or another source you trust." },
         { "title": "Check it works", "detail": "Make sure the tools show up, then use them in a conversation." }
       ]
     }

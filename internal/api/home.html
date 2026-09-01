@@ -229,6 +229,10 @@
 </div>
 
 <div id="mcpsetup" class="wizard w-full flex flex-col gap-5">
+  <!-- Access notice: shown for every platform, above both the client grid
+       and the step guides, so users read what connecting means up front. -->
+  <div id="wiz-notice" class="hidden"></div>
+
   <!-- Step 0: pick a client -->
   <div id="wiz-select" class="wizard-screen flex flex-col gap-4">
     <p class="helper-text font-semibold text-low pb-2" id="wiz-pick-label">Choose your assistant</p>
@@ -323,6 +327,7 @@ trusted raw HTML so Go never parses their {{ }} actions. */ -}}
   var backEl = document.getElementById("wiz-back");
   var noteEl = document.getElementById("wiz-note");
   var linksEl = document.getElementById("wiz-links");
+  var noticeEl = document.getElementById("wiz-notice");
 
   var current = null;
   var step = 0;
@@ -367,6 +372,13 @@ trusted raw HTML so Go never parses their {{ }} actions. */ -}}
     btn.addEventListener("click", function () { open(p); });
     gridEl.appendChild(btn);
   });
+
+  // The access notice applies to every platform; render it once so it stays
+  // visible above the client grid and the step guides.
+  if (data.notice && tpl["tpl-notice"]) {
+    noticeEl.innerHTML = tpl["tpl-notice"](data.notice);
+    noticeEl.classList.remove("hidden");
+  }
 
   function renderEndpoint() {
     if (data && data.resourceURL) {
