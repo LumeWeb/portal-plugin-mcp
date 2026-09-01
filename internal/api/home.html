@@ -328,6 +328,17 @@ trusted raw HTML so Go never parses their {{ }} actions. */ -}}
   var step = 0;
   var all = false;
 
+  // The Handlebars runtime loads from /static/handlebars.min.js; if that asset
+  // fails, bail instead of throwing a ReferenceError on a mostly-rendered page.
+  if (typeof Handlebars === "undefined") {
+    var fallback = document.getElementById("wiz-note");
+    if (fallback) {
+      fallback.textContent = "The setup wizard could not load. Reload the page, or connect your client manually with the server address above.";
+      fallback.classList.remove("hidden");
+    }
+    return;
+  }
+
   Handlebars.registerHelper("addOne", function (i) { return i + 1; });
   var tpl = Object.create(null);
   document.querySelectorAll('script[type="text/x-handlebars-template"]').forEach(function (s) {

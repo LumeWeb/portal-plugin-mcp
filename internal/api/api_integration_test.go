@@ -162,6 +162,12 @@ func TestMCPRootServesHomepage(t *testing.T) {
 		require.GreaterOrEqual(t, end, 0)
 		wizardJSON := remainder[:end]
 		require.True(t, json.Valid([]byte(wizardJSON)), "wizard JSON must parse")
+
+		// The wizard must check for the Handlebars runtime before using it, so a
+		// failed /static/handlebars.min.js load degrades to a visible fallback
+		// message instead of throwing a ReferenceError after the JSON guard
+		// already passed (regression from Kody review round 2).
+		require.Contains(t, body, `typeof Handlebars === "undefined"`)
 	}, getMCPAPITestOptions())
 }
 
