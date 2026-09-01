@@ -330,12 +330,18 @@ trusted raw HTML so Go never parses their {{ }} actions. */ -}}
 
   // The Handlebars runtime loads from /static/handlebars.min.js; if that asset
   // fails, bail instead of throwing a ReferenceError on a mostly-rendered page.
+  // The wizard screen is hidden by default and only un-hidden by code below, so
+  // reveal it with the server address so users can still connect manually.
   if (typeof Handlebars === "undefined") {
-    var fallback = document.getElementById("wiz-note");
-    if (fallback) {
-      fallback.textContent = "The setup wizard could not load. Reload the page, or connect your client manually with the server address above.";
-      fallback.classList.remove("hidden");
+    selectEl.classList.add("hidden");
+    stepsEl.classList.remove("hidden");
+    if (data && data.resourceURL) {
+      endpointValueEl.textContent = data.resourceURL;
+      copyEl.setAttribute("data-copy", data.resourceURL);
+      endpointEl.classList.remove("hidden");
     }
+    noteEl.textContent = "The setup wizard could not load. Reload the page, or use the server address above to connect your client manually.";
+    noteEl.classList.remove("hidden");
     return;
   }
 
