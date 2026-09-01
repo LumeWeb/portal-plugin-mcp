@@ -65,8 +65,8 @@ func oauthReqFromValues(q url.Values) oauth.AuthorizeRequest {
 // The library builds endpoints at <issuer>/oauth/*, but this extension serves
 // them under /api/auth/oauth/*, so the discoverable endpoint URLs are rewritten
 // to the actual routes.
-func (e *OAuthExtension) handleASMetadata(w http.ResponseWriter, r *http.Request) {
-	meta, err := e.oauthSvc.Metadata(r.Context())
+func (e *OAuthExtension) handleASMetadata(c echo.Context) error {
+	meta, err := e.oauthSvc.Metadata(c.Request().Context())
 	if err != nil {
 		// When the OAuth provider is disabled (oauth.enabled=false) the
 		// authorization server is never initialized, so there is no metadata
@@ -74,12 +74,10 @@ func (e *OAuthExtension) handleASMetadata(w http.ResponseWriter, r *http.Request
 		// respond 404 rather than a misleading generic 500.
 		if errors.Is(err, portalservice.ErrOAuthDisabled) {
 			e.logDebug("authorization-server metadata unavailable: oauth provider disabled")
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "authorization_server_unavailable"})
-			return
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "authorization_server_unavailable"})
 		}
 		e.logDebug("failed to build authorization-server metadata", zap.Error(err))
-		writeServerError(w)
-		return
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "server_error"})
 	}
 	e.logDebug("serving authorization-server metadata")
 	base := strings.TrimRight(e.baseURL, "/")
@@ -92,7 +90,7 @@ func (e *OAuthExtension) handleASMetadata(w http.ResponseWriter, r *http.Request
 	meta.AuthorizationEndpoint = base + "/api/auth/oauth/authorize"
 	meta.TokenEndpoint = base + "/api/auth/oauth/token"
 	meta.RegistrationEndpoint = base + "/api/auth/oauth/register"
-	writeJSON(w, http.StatusOK, meta)
+	return c.JSON(http.StatusOK, meta)
 }
 
 // handleOpenIDConfig serves the OpenID Connect Discovery 1.0 document. It
@@ -292,15 +290,14 @@ func (e *OAuthExtension) redirectToLogin(c echo.Context, appName string) error {
 
 // handleToken exchanges an authorization code or refresh token for tokens
 // (RFC 6749 §5.1). Errors are returned per RFC 6749 §5.2.
-func (e *OAuthExtension) handleToken(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
+func (e *OAuthExtension) handleToken(c echo.Context) error {
+	if c.Request().Method != http.MethodPost {
+		c.Response().Header().Set("Allow", http.MethodPost)
+		return echo.NewHTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
+	r := c.Request()
 	if err := r.ParseForm(); err != nil {
-		writeTokenError(w, oauth.NewInvalidRequestError("could not parse form"))
-		return
+		return writeTokenError(c, oauth.NewInvalidRequestError("could not parse form"))
 	}
 
 	grantType := r.PostFormValue("grant_type")
@@ -325,42 +322,36 @@ func (e *OAuthExtension) handleToken(w http.ResponseWriter, r *http.Request) {
 			RefreshToken: r.PostFormValue("refresh_token"),
 		})
 	default:
-		writeTokenError(w, oauth.NewUnsupportedGrantTypeError("unsupported grant_type"))
-		return
+		return writeTokenError(c, oauth.NewUnsupportedGrantTypeError("unsupported grant_type"))
 	}
 	if err != nil {
 		e.logDebug("token request failed", zap.String("grant_type", grantType), zap.Error(err))
-		writeTokenError(w, err)
-		return
+		return writeTokenError(c, err)
 	}
 	e.logDebug("token issued", zap.String("grant_type", grantType))
-	writeTokens(w, resp)
+	return writeTokens(c, resp)
 }
 
 // handleRegister implements Dynamic Client Registration (RFC 7591 §3.1).
-func (e *OAuthExtension) handleRegister(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
+func (e *OAuthExtension) handleRegister(c echo.Context) error {
+	if c.Request().Method != http.MethodPost {
+		c.Response().Header().Set("Allow", http.MethodPost)
+		return echo.NewHTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
 	var request OAuthRegisterRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil || len(request.RedirectURIs) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_client_metadata"})
-		return
+	if err := json.NewDecoder(c.Request().Body).Decode(&request); err != nil || len(request.RedirectURIs) == 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_client_metadata"})
 	}
 	for _, redirectURI := range request.RedirectURIs {
 		if !oauth.AllowedClientRedirect(redirectURI) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_redirect_uri"})
-			return
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_redirect_uri"})
 		}
 	}
 	if request.TokenEndpointAuthMethod != "" && request.TokenEndpointAuthMethod != "none" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_client_metadata"})
-		return
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_client_metadata"})
 	}
 
-	client, err := e.oauthSvc.RegisterClient(r.Context(), oauth.ClientRegistration{
+	client, err := e.oauthSvc.RegisterClient(c.Request().Context(), oauth.ClientRegistration{
 		ClientName:        request.ClientName,
 		RedirectURIs:      request.RedirectURIs,
 		GrantTypes:        request.GrantTypes,
@@ -372,19 +363,17 @@ func (e *OAuthExtension) handleRegister(w http.ResponseWriter, r *http.Request) 
 		// disabled; report that as 503 rather than a misleading 400 and log
 		// the underlying cause.
 		if errors.Is(err, portalservice.ErrOAuthDisabled) {
-			writeErrAndLog(e.Logger(), w, "dynamic_client_registration", request.ClientName, err)
-			return
+			return writeErrAndLog(e.Logger(), c, "dynamic_client_registration", request.ClientName, err)
 		}
 		e.logDebug("client registration rejected",
 			zap.String("client_name", request.ClientName),
 			zap.Error(err))
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_client_metadata"})
-		return
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_client_metadata"})
 	}
 	e.logDebug("client registered",
 		zap.String("client_id", client.ClientID),
 		zap.String("client_name", client.ClientName))
-	writeJSON(w, http.StatusCreated, OAuthClientResponse{
+	return c.JSON(http.StatusCreated, OAuthClientResponse{
 		ClientID:                client.ClientID,
 		ClientName:              client.ClientName,
 		RedirectURIs:            client.RedirectURIs,
@@ -396,21 +385,20 @@ func (e *OAuthExtension) handleRegister(w http.ResponseWriter, r *http.Request) 
 
 // writeTokenError maps a library oauth error to an RFC 6749 §5.2 token endpoint
 // error response. Non-oauth errors surface as server_error.
-func writeTokenError(w http.ResponseWriter, err error) {
+func writeTokenError(c echo.Context, err error) error {
 	var oauthErr *oauth.OAuthError
 	if errors.As(err, &oauthErr) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{
+		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error":             oauthErr.Code,
 			"error_description": oauthErr.Description,
 		})
-		return
 	}
-	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server_error"})
+	return c.JSON(http.StatusInternalServerError, map[string]string{"error": "server_error"})
 }
 
 // writeTokens writes the RFC 6749 §5.1 success response.
-func writeTokens(w http.ResponseWriter, resp *oauth.TokenResponse) {
-	writeJSON(w, http.StatusOK, map[string]any{
+func writeTokens(c echo.Context, resp *oauth.TokenResponse) error {
+	return c.JSON(http.StatusOK, map[string]any{
 		"access_token":  resp.AccessToken,
 		"token_type":    resp.TokenType,
 		"expires_in":    resp.ExpiresIn,
@@ -420,8 +408,5 @@ func writeTokens(w http.ResponseWriter, resp *oauth.TokenResponse) {
 
 // unprocessable writes a 400 JSON error body from an echo handler.
 func unprocessable(c echo.Context, msg string) error {
-	c.Response().Header().Set("Content-Type", "application/json")
-	c.Response().WriteHeader(http.StatusBadRequest)
-	_ = json.NewEncoder(c.Response()).Encode(map[string]string{"error": "invalid_request", "error_description": msg})
-	return nil
+	return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_request", "error_description": msg})
 }

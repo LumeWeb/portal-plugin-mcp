@@ -2,11 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 
+	"github.com/labstack/echo/v4"
 	"go.lumeweb.com/oauth"
 )
 
@@ -70,18 +72,20 @@ func TestBuildRedirectURI(t *testing.T) {
 }
 
 func TestWriteTokens(t *testing.T) {
-	w := httptest.NewRecorder()
-	writeTokens(w, &oauth.TokenResponse{
+	c := newEchoContext()
+	if err := writeTokens(c, &oauth.TokenResponse{
 		AccessToken:  "tok",
 		TokenType:    "Bearer",
 		ExpiresIn:    3600,
 		RefreshToken: "ref",
-	})
-	if w.Code != 200 {
-		t.Fatalf("expected 200, got %d", w.Code)
+	}); err != nil {
+		t.Fatalf("writeTokens returned error: %v", err)
+	}
+	if c.Response().Status != 200 {
+		t.Fatalf("expected 200, got %d", c.Response().Status)
 	}
 	var body map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+	if err := json.Unmarshal(c.Response().Writer.(*httptest.ResponseRecorder).Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 	if body["access_token"] != "tok" || body["token_type"] != "Bearer" {
@@ -90,16 +94,27 @@ func TestWriteTokens(t *testing.T) {
 }
 
 func TestWriteTokenError(t *testing.T) {
-	w := httptest.NewRecorder()
-	writeTokenError(w, oauth.NewInvalidGrantError("expired code"))
-	if w.Code != 400 {
-		t.Fatalf("expected 400, got %d", w.Code)
+	c := newEchoContext()
+	if err := writeTokenError(c, oauth.NewInvalidGrantError("expired code")); err != nil {
+		t.Fatalf("writeTokenError returned error: %v", err)
+	}
+	if c.Response().Status != 400 {
+		t.Fatalf("expected 400, got %d", c.Response().Status)
 	}
 	var body map[string]string
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+	if err := json.Unmarshal(c.Response().Writer.(*httptest.ResponseRecorder).Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 	if body["error"] != "invalid_grant" {
 		t.Fatalf("unexpected error code: %v", body)
 	}
+}
+
+// newEchoContext returns an echo.Context bound to a fresh httptest recorder
+// and a minimal request, so handlers can write JSON responses.
+func newEchoContext() echo.Context {
+	e := echo.New()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	return e.NewContext(req, rec)
 }

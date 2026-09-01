@@ -168,7 +168,7 @@ func (e *OAuthExtension) Configure(gRouter router.Router, accessSvc core.AccessS
 		// RFC 8414 authorization-server metadata. Served on the dashboard
 		// subdomain because that is the OAuth issuer for the portal.
 		router.NewRoute(http.MethodGet, "/.well-known/oauth-authorization-server",
-			httpHandler(e.handleASMetadata),
+			e.handleASMetadata,
 			metadataSwagger,
 			router.WithCors(discoveryCORSConfig()),
 		),
@@ -219,23 +219,18 @@ func (e *OAuthExtension) Configure(gRouter router.Router, accessSvc core.AccessS
 			router.WithCors(),
 		),
 		// Token endpoint (RFC 6749 §5): code exchange + refresh token grant.
-		router.NewRoute(http.MethodPost, "/api/auth/oauth/token", httpHandler(e.handleToken),
+		router.NewRoute(http.MethodPost, "/api/auth/oauth/token", e.handleToken,
 			tokenSwagger,
 			router.WithCors(),
 		),
 		// Dynamic client registration (RFC 7591 §3.1).
-		router.NewRoute(http.MethodPost, "/api/auth/oauth/register", httpHandler(e.handleRegister),
+		router.NewRoute(http.MethodPost, "/api/auth/oauth/register", e.handleRegister,
 			registerSwagger,
 			router.WithCors(),
 		),
 	)
 
 	return router.RegisterRoutes(gRouter, accessSvc, subdomain, routes)
-}
-
-// httpHandler adapts an http.HandlerFunc into an echo.HandlerFunc.
-func httpHandler(h http.HandlerFunc) echo.HandlerFunc {
-	return echo.WrapHandler(h)
 }
 
 // verifySameOrigin guards the authorize POST against CSRF. The consent page

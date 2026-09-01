@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/labstack/echo/v4"
 	"go.lumeweb.com/portal/core"
 	portalservice "go.lumeweb.com/portal/service"
 	"go.uber.org/zap"
@@ -36,7 +37,7 @@ func oauthServerError(err error) (code string, status int) {
 // signals the server's own configured resource failed to register — is a
 // genuine operator-actionable failure and logs at error. Internal error
 // strings are never echoed to the client.
-func writeErrAndLog(logger *core.Logger, w http.ResponseWriter, op, detail string, err error) {
+func writeErrAndLog(logger *core.Logger, c echo.Context, op, detail string, err error) error {
 	code, status := oauthServerError(err)
 	if logger != nil {
 		fields := []zap.Field{zap.String("detail", detail), zap.Int("http_status", status)}
@@ -46,5 +47,5 @@ func writeErrAndLog(logger *core.Logger, w http.ResponseWriter, op, detail strin
 			logger.Error("oauth: "+op+" failed", append([]zap.Field{zap.Error(err)}, fields...)...)
 		}
 	}
-	writeJSON(w, status, map[string]string{"error": code})
+	return c.JSON(status, map[string]string{"error": code})
 }

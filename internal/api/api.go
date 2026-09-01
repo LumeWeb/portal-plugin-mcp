@@ -189,7 +189,7 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 		// itself and on the OPTIONS preflight route below, so cross-origin
 		// browser MCP clients can fetch it during discovery.
 		router.NewRoute(http.MethodGet, "/.well-known/oauth-protected-resource",
-			echo.WrapHandler(a.protectedResourceHandler()),
+			a.protectedResourceHandler(),
 			router.WithAccess(""),
 			router.WithCors(discoveryCORSConfig()),
 			router.WithSwagger(
@@ -212,9 +212,9 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 		// Serve the MCP subdomain root as a permanent (308) redirect to the MCP
 		// resource path, so users can reach the endpoint without appending /mcp.
 		router.NewRoute(http.MethodGet, "/",
-			httpHandler(func(w http.ResponseWriter, r *http.Request) {
-				http.Redirect(w, r, a.resourcePath, http.StatusPermanentRedirect)
-			}),
+			func(c echo.Context) error {
+				return c.Redirect(http.StatusPermanentRedirect, a.resourcePath)
+			},
 			router.WithAccess(""),
 			router.WithSwagger(
 				router.WithSummary("MCP subdomain root redirect"),
@@ -303,18 +303,17 @@ func mcpCORSConfig() cors.Config {
 
 // protectedResourceHandler returns RFC 9728 protected-resource metadata for
 // the MCP server, delegating to the OAuth provider service.
-func (a *API) protectedResourceHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		meta, err := a.oauthSvc.ProtectedResourceMetadata(r.Context(), a.resourceURL)
+func (a *API) protectedResourceHandler() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		meta, err := a.oauthSvc.ProtectedResourceMetadata(c.Request().Context(), a.resourceURL)
 		if err != nil {
 			// Surface a meaningful status (404 resource unknown, 503 provider
 			// disabled) instead of a generic 500, and record the underlying
 			// cause at error level so discovery failures are diagnosable.
-			writeErrAndLog(a.Logger(), w, "protected_resource_metadata", a.resourceURL, err)
-			return
+			return writeErrAndLog(a.Logger(), c, "protected_resource_metadata", a.resourceURL, err)
 		}
 		a.Logger().Debug("serving protected resource metadata",
 			zap.String("resource_url", a.resourceURL))
-		writeJSON(w, http.StatusOK, meta)
-	})
+		return c.JSON(http.StatusOK, meta)
+	}
 }
