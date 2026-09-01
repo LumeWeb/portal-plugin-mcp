@@ -7,9 +7,9 @@ require (
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/stretchr/testify v1.12.1
-	go.lumeweb.com/oauth v0.1.3
+	go.lumeweb.com/oauth v0.1.5
 	go.lumeweb.com/pinner-cli v0.2.2-0.20260831050644-2196916e9dd4
-	go.lumeweb.com/portal v0.5.2-0.20260831025550-4895b264ebdb
+	go.lumeweb.com/portal v0.5.2-0.20260901033111-4780b61cb79a
 	go.lumeweb.com/portal-middleware v0.3.7
 	go.lumeweb.com/portal-router v0.7.7
 	go.uber.org/zap v1.28.0
