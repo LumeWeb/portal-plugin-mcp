@@ -204,11 +204,20 @@
   .btn-reset { background: none; font-family: inherit; cursor: pointer; color: inherit; }
   .btn-borderless { border: none; }
 
-  .hidden { display: none !important; }
+  /* Assistant tiles spread 4-up inside the wide card so a large display
+     doesn't show a 400px-wide column of two tiny tiles with dead space;
+     below 40em the card is narrow, so stay at 2x2. */
+  #wiz-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  @media (min-width: 40em) {
+    #wiz-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
 
   @media (min-width: 32em) {
     .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
+
 </style>
 
 <div class="app-header">
