@@ -15,14 +15,18 @@ type OAuthRedirectResponse struct {
 
 // OAuthTokenRequest represents the form-encoded OAuth token endpoint request
 // (RFC 6749 §5). It is used for OpenAPI schema documentation only.
+// Per RFC 6749 §4.1.3/§6 only grant_type (and client_id for unauthenticated
+// public clients) is required; the remaining fields apply only to specific
+// grant types. Fields omitted from the OpenAPI required list are marked
+// omitempty below.
 type OAuthTokenRequest struct {
 	GrantType    string `json:"grant_type"`
-	Code         string `json:"code"`
 	ClientID     string `json:"client_id"`
-	RedirectURI  string `json:"redirect_uri"`
-	CodeVerifier string `json:"code_verifier"`
-	Resource     string `json:"resource"`
-	RefreshToken string `json:"refresh_token"`
+	Code         string `json:"code,omitempty"`
+	RedirectURI  string `json:"redirect_uri,omitempty"`
+	CodeVerifier string `json:"code_verifier,omitempty"`
+	Resource     string `json:"resource,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
 }
 
 // OAuthRegisterRequest is the RFC 7591 §3.1 dynamic client registration
