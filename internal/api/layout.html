@@ -54,10 +54,12 @@
       color: var(--color-high-contrast-text);
       min-height: 100dvh;
       display: flex;
+      flex-direction: column;
       align-items: center;
-      justify-content: center;
+      /* safe centering: when the content is taller than the viewport, fall back
+         to start alignment instead of clipping the top of the card. */
+      justify-content: safe center;
       padding: 1.5rem;
-      padding-bottom: 3.5rem;
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
@@ -82,6 +84,27 @@
       display: flex;
       flex-direction: column;
       gap: 1.5rem;
+    }
+
+    /* Below the wider layout, cap prose so lines stay at a readable length. */
+    @media (min-width: 40em) {
+      .card {
+        max-width: 40rem;
+      }
+      .app-header,
+      .info-section {
+        max-width: 34rem;
+        margin-inline: auto;
+      }
+    }
+
+    /* Roomy screens: scale the whole rem-based UI up instead of leaving a
+       tiny 16px island on a large display. */
+    @media (min-width: 100em) {
+      html { font-size: 17.5px; }
+    }
+    @media (min-width: 137.5em) {
+      html { font-size: 19px; }
     }
 
     .app-header {
@@ -318,19 +341,18 @@
       line-height: 1.5;
     }
 
+    /* In normal flow: a fixed footer overlaps page content whenever the page
+       is taller than the viewport. margin-top keeps the card centered and the
+       footer bottom-anchored on short pages. */
     .footer {
-      position: fixed;
-      bottom: 1rem;
-      left: 0;
-      right: 0;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 0.375rem;
       font-size: 0.75rem;
       color: var(--color-muted-text);
-      z-index: 1;
-      pointer-events: none;
+      margin-top: -0.5rem;
+      padding: 1rem 0 0;
     }
 
     .footer-logo {
@@ -347,7 +369,6 @@
     @media (max-width: 30em) {
       body {
         padding: 1rem;
-        padding-bottom: 3rem;
       }
       .card {
         padding: 1.5rem;

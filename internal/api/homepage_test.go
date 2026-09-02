@@ -65,3 +65,15 @@ func TestWizardTemplateRendersNotice(t *testing.T) {
 	require.Contains(t, data.Notice.Items[0].Text, "Pinner")
 	require.Contains(t, data.Notice.Items[2].Text, "official Pinner server")
 }
+
+// TestHomepageHiddenUtilityGuard ensures the wizard's state-machine utilities
+// survive style edits. The client toggles every screen (#wiz-select,
+// #wiz-steps, #wiz-endpoint, #wiz-all, #wiz-note, #wiz-links, #wiz-notice)
+// through the `.hidden` class; if that rule is dropped from the <style> block,
+// both wizard screens render on initial load and every classList toggle
+// becomes a visual no-op.
+func TestHomepageHiddenUtilityGuard(t *testing.T) {
+	require.Contains(t, homeHTML, ".hidden { display: none !important; }")
+	require.Contains(t, homeHTML, "#wiz-grid {")
+	require.Contains(t, homeHTML, "repeat(4, minmax(0, 1fr))")
+}
