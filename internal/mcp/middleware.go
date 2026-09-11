@@ -59,10 +59,10 @@ func NewMiddleware(oauthSvc core.OAuthProviderService, baseURL, resourceURL stri
 	}
 }
 
-// WrapHTTP implements the mcpembed.OAuthHandler seam so this middleware can
-// gate the embedded pinner MCP handler. It is OAuth enforcement: validate the
-// bearer token and reject invalid/insufficient tokens with a full RFC 6750/
-// 9728 challenge, else pass through to next.
+// WrapHTTP implements the hosted.OAuthHandler seam so this middleware can gate
+// the embedded pinner MCP handler. It is OAuth enforcement: validate the bearer
+// token and reject invalid/insufficient tokens with a full RFC 6750/9728
+// challenge, else pass through to next.
 func (mw *Middleware) WrapHTTP(next http.Handler) http.Handler {
 	return mw.Protect(next)
 }

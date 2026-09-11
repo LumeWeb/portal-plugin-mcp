@@ -14,15 +14,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      # mcpembed regenerates pinner-cli's app JS bundles via pnpm, which is not
-      # preinstalled on the runner. Node first, then pnpm (pinner-cli uses
-      # pnpm 10 per its packageManager field).
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
+      # `go generate ./...` is a no-op: the hosted MCP runtime is owned in-plugin
+      # (internal/hosted) on the public go.lumeweb.com/pinner + mcpplane
+      # contracts, with no pinner-cli/mcpembed dependency to regenerate assets
+      # for, so no Node/pnpm toolchain is required on the runner.
       - name: Generate
         run: go generate ./...
       - run: go build -tags no_tunnel ./...

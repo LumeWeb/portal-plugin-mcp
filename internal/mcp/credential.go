@@ -22,9 +22,10 @@ var ErrNotAuthenticated = errors.New("mcp: no authenticated caller")
 // for every operation anyway.
 const apiTokenTTL = 15 * time.Minute
 
-// CredentialResolver implements the pinner mcpembed.CredentialResolver seam. It
-// maps the OAuth-authenticated MCP caller onto a Portal API JWT (jwt.PurposeLogin)
-// so the hosted pinner operations call the Portal API as that user.
+// CredentialResolver implements the hosted construction boundary's
+// CredentialResolver seam. It maps the OAuth-authenticated MCP caller onto a
+// Portal API JWT (jwt.PurposeLogin) so the hosted pinner operations call the
+// Portal API as that user.
 //
 // The OAuth middleware has already validated the caller and stamped the numeric
 // user ID onto the request context (auth.TokenInfoFromContext, see Middleware).

@@ -8,10 +8,10 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v4"
-	"go.lumeweb.com/pinner-cli/mcpembed"
 	"go.lumeweb.com/portal-middleware/cors"
 	"go.lumeweb.com/portal-plugin-mcp/internal"
 	pluginConfig "go.lumeweb.com/portal-plugin-mcp/internal/config"
+	"go.lumeweb.com/portal-plugin-mcp/internal/hosted"
 	"go.lumeweb.com/portal-plugin-mcp/internal/mcp"
 	router "go.lumeweb.com/portal-router"
 	"go.lumeweb.com/portal/config"
@@ -119,16 +119,17 @@ func NewAPI() (core.API, []core.ContextBuilderOption, error) {
 }
 
 func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) error {
-	catalogDeps, err := mcpembed.NewCatalogDeps(a.portalEndpoint, a.secure)
+	catalogDeps, err := hosted.NewCatalogDeps(a.portalEndpoint, a.secure, hosted.BuildCatalogDeps)
 	if err != nil {
 		return fmt.Errorf("mcp: build catalog deps: %w", err)
 	}
 
-	handler, err := mcpembed.New(mcpembed.Options{
+	handler, err := hosted.New(hosted.Options{
 		// The hosted surface: account/subscription plus IPFS/websites/dns/ipns/
 		// ens/upload operations (never the Sia vault or portal admin).
-		Surface:     mcpembed.SurfaceHosted,
+		DomainScope: hosted.DomainScopeHosted,
 		CatalogDeps: catalogDeps,
+		BuildServer: hosted.BuildHostedServer,
 		// Resolve the OAuth-authenticated caller to a per-user Portal API JWT.
 		CredentialResolver: mcp.NewCredentialResolver(a.identityKey, a.domain, 0).WithLogger(a.Logger().Named("mcp.credential")),
 		// Reuse the existing OAuth bearer gate as the handler-level OAuth
@@ -170,7 +171,7 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 	mcpHandler := echo.WrapHandler(handler)
 
 	// The pinner byte-route coordinators mount their token-gated handlers at
-	// /upload/ and /download/ on the embedded mux root (see mcpembed.New).
+	// /upload/ and /download/ on the embedded mux root (see hosted.New).
 	// Serve them under the MCP resource path so the presigned URLs the hosted
 	// agent mints resolve through the portal on the mcp subdomain; StripPrefix
 	// rewrites /mcp/upload/<token> -> /upload/<token> for the mux. The
