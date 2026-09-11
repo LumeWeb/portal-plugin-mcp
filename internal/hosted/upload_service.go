@@ -19,6 +19,7 @@ import (
 	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner/core/uploads"
 	portalsdk "go.lumeweb.com/portal-sdk"
+	"go.lumeweb.com/queryutil"
 	"go.lumeweb.com/queryutil/filter"
 )
 
@@ -146,16 +147,29 @@ func (s *hostedUploadService) waitForPin(ctx context.Context, rootCID string, au
 }
 
 // findHostedOperationByCID locates the most recent account operation for a
-// given CID, or fails closed when none exists.
+// given CID, or fails closed when none exists. It requests newest-first
+// ordering AND defensively selects the operation with the highest id, so a
+// re-upload of previously-pinned content resolves to THIS session's fresh
+// operation rather than an older completed one for the same CID (attaching
+// waitForPin to the stale operation would report success prematurely).
 func findHostedOperationByCID(ctx context.Context, client portalsdk.AccountAPI, cid string) (*portalsdk.Operation, error) {
-	operations, _, err := client.ListOperations(ctx, portalsdk.WithFilters(filter.FieldEqual("cid", cid)))
+	operations, _, err := client.ListOperations(ctx,
+		portalsdk.WithFilters(filter.FieldEqual("cid", cid)),
+		portalsdk.WithSorts(queryutil.Sort{Field: "id", Order: queryutil.OrderDesc}),
+	)
 	if err != nil {
 		return nil, err
 	}
 	if len(operations) == 0 {
 		return nil, fmt.Errorf("no pin operation found for CID %s", cid)
 	}
-	return operations[0], nil
+	newest := operations[0]
+	for _, op := range operations[1:] {
+		if op.Id > newest.Id {
+			newest = op
+		}
+	}
+	return newest, nil
 }
 
 // compile assertion: hostedUploadService satisfies uploads.Service.

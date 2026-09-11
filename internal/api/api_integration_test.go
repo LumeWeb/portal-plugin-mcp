@@ -224,13 +224,6 @@ func TestMCPEndpointAuthorized(t *testing.T) {
 // port. A request that reaches a coordinator returns its own handler response
 // (405 for a wrong method, 404 for an unknown token), never a router-level miss.
 func TestMCPByteRoutesRouteThroughRouter(t *testing.T) {
-	// The hosted IPFS byte-route coordinators (presigned upload PUT / filedrop
-	// GET) are wired by the plugin-owned transfer/service-factory slice. Until
-	// that slice lands, the plugin-owned hosted runtime does not mount them, so
-	// these routes are not yet served out of band of the MCP channel. Skipped
-	// (not deleted) so the tests arm the moment the transfer slice returns the
-	// HostedTransfer coordinators.
-	t.Skip("hosted IPFS byte-route coordinators are not yet wired in the plugin-owned runtime slice")
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		token := strings.Repeat("0", 32)
 
@@ -261,9 +254,6 @@ func TestMCPByteRoutesRouteThroughRouter(t *testing.T) {
 // transferCORS must answer with the upload method and header allow-list (not a
 // router-level 404/405).
 func TestMCPByteRouteCORSPreflight(t *testing.T) {
-	// See TestMCPByteRoutesRouteThroughRouter: the token-gated byte routes (and
-	// their transferCORS) are part of the pending plugin-owned transfer slice.
-	t.Skip("hosted IPFS byte-route coordinators are not yet wired in the plugin-owned runtime slice")
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		req := ctx.NewAPIRequest(http.MethodOptions, "/mcp/upload/"+strings.Repeat("0", 32), nil)
 		req.Header.Set("Origin", "http://localhost:5173")
