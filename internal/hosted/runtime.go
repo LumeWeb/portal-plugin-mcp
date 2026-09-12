@@ -84,7 +84,15 @@ func BuildHostedServer(cfg ServerConfig) (ServerBuildResult, error) {
 			DevSnapshot: cfg.DevTools,
 		}),
 	}
+	// Only the DIRECT surface materializes on tools/list: the compiled
+	// descriptors carry DirectVisible exactly where the resolved listing policy
+	// materializes them (flat stamps every agent-safe op, progressive leaves
+	// the non-direct ops reachable only through the meta-tools below). Full
+	// dispatch still goes through the owning catalog gate via catalogToolHandler.
 	for _, t := range presentation.Tools {
+		if !t.DirectVisible {
+			continue
+		}
 		desc := t
 		desc.Handler = catalogToolHandler(cat, desc.Name, cfg.CredentialResolver)
 		if err := sdk.RegisterTool(srv, deps, desc); err != nil {
@@ -110,6 +118,19 @@ func BuildHostedServer(cfg ServerConfig) (ServerBuildResult, error) {
 	}
 	if err := sdk.RegisterResources(srv, presentation.Resources, presentation.ResourceTemplates); err != nil {
 		return ServerBuildResult{}, fmt.Errorf("hosted MCP server: register resources: %w", err)
+	}
+
+	// Register the progressive-disclosure meta-tools (search_tools,
+	// describe_tool, and the typed invoke_*_tool dispatchers) when the
+	// RESOLVED listing policy serves them: progressive always; flat unless
+	// the policy explicitly opts out with IncludeMetaOnFlat=false. The gate
+	// reads only the resolved pinner/mcp policy — never the hosted deployment
+	// mode — so the meta surface agrees with the listing this same assembly
+	// resolved (and returns via ServerBuildResult.Listing).
+	if servesMetaTools(listing) {
+		if err := registerHostedMetaTools(srv, presentation, cfg.CredentialResolver); err != nil {
+			return ServerBuildResult{}, fmt.Errorf("hosted MCP server: register meta tools: %w", err)
+		}
 	}
 
 	return ServerBuildResult{
