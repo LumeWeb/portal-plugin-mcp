@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 
+	"go.lumeweb.com/canimcp"
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner/assembly"
@@ -43,6 +44,17 @@ func BuildHostedServer(cfg ServerConfig) (ServerBuildResult, error) {
 		return ServerBuildResult{}, err
 	}
 
+	// Resolve the SHARED tool-listing policy for this assembly: an explicit
+	// override when the embedding host declared one, else the shared flat web
+	// policy for the hosted audience (see hostedWebListingPolicy). It is
+	// threaded into the assembly so the hosted tools/list materialization
+	// (direct vs progressive, meta-on-flat) resolves through the one shared
+	// policy/selector seam — the same seam the self-hosted CLI assembly uses.
+	listing := hostedWebListingPolicy()
+	if cfg.Listing != nil {
+		listing = *cfg.Listing
+	}
+
 	// Assemble the hosted presentation (compiled catalog surface + direct set)
 	// from the public pinner contract. Hosted mode excludes the Sia vault and
 	// portal admin from the surface by construction.
@@ -51,6 +63,7 @@ func BuildHostedServer(cfg ServerConfig) (ServerBuildResult, error) {
 		Hosted:      true,
 		Deps:        bundle,
 		Transfer:    transferDeps,
+		Listing:     &listing,
 	})
 	if err != nil {
 		return ServerBuildResult{}, fmt.Errorf("hosted MCP server: assemble presentation: %w", err)
@@ -89,7 +102,27 @@ func BuildHostedServer(cfg ServerConfig) (ServerBuildResult, error) {
 		return ServerBuildResult{}, fmt.Errorf("hosted MCP server: register resources: %w", err)
 	}
 
-	return ServerBuildResult{Server: srv, Transfer: coordinators}, nil
+	return ServerBuildResult{
+		Server:   srv,
+		Transfer: coordinators,
+		// The RESOLVED policy the assembly actually materializes (the shared
+		// flat default unless an override was supplied), exposed so an
+		// embedding host never has to re-derive it.
+		Listing: presentation.ListingPolicy(),
+	}, nil
+}
+
+// hostedWebListingPolicy resolves the SHARED tools/list policy for the
+// hosted (Portal-embedded) web audience. A hosted server is served over HTTP
+// to web MCP hosts — Claude Web, Grok Web, and ChatGPT/OpenAI Web — which the
+// shared Pinner host selector (pinner/mcp.PolicyForHost) maps to flat
+// tools/list because progressive discovery is unreliable on cloud-hosted
+// clients. All of those hosts resolve the same flat strategy, so the hosted
+// construction root resolves the shared flat policy for its web-HTTP audience
+// once, at assembly time; an embedding host that targets a specific host
+// (or its own progressive surface) passes that policy via cfg.Listing instead.
+func hostedWebListingPolicy() mcp.ListingPolicy {
+	return mcp.PolicyForHost(canimcp.HostClaude, canimcp.TransportHTTP)
 }
 
 // buildHostedTransfer assembles the mcp.TransferDeps (the executor/coordinator
