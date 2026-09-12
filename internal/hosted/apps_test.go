@@ -200,3 +200,30 @@ func TestDownloadManagerRequiresFiledropCoordinator(t *testing.T) {
 	assert.Nil(t, installed)
 	assert.Contains(t, err.Error(), "filedrop download coordinator")
 }
+
+// TestHostedVerifyInstalledOrderInsensitive checks hostedVerifyInstalled (the
+// set-based check backing verifyApps and the post-install assertion) accepts
+// the configured inventory in any order — the mcp.Assemble / appswire.Install
+// may report launchers in a different order than the table load-order, so an
+// order-sensitive comparison would spuriously fail the build.
+func TestHostedVerifyInstalledOrderInsensitive(t *testing.T) {
+	rows := hostedAppRows()
+	launchers := hostedLauncherNames(rows)
+	require.NotEmpty(t, launchers, "hosted surface must select some rows")
+
+	// Reversed order must still satisfy the inventory check.
+	reversed := make([]string, len(launchers))
+	copy(reversed, launchers)
+	for i, j := 0, len(reversed)-1; i < j; i, j = i+1, j-1 {
+		reversed[i], reversed[j] = reversed[j], reversed[i]
+	}
+	assert.NoError(t, hostedVerifyInstalled(reversed, rows))
+
+	// An extra launcher must fail (over-install).
+	extra := append(append([]string{}, launchers...), "open_extra_view")
+	assert.Error(t, hostedVerifyInstalled(extra, rows))
+
+	// A missing launcher must fail (under-install).
+	missing := launchers[:len(launchers)-1]
+	assert.Error(t, hostedVerifyInstalled(missing, rows))
+}

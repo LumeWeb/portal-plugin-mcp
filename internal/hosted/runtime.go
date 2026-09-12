@@ -9,7 +9,6 @@ package hosted
 import (
 	"errors"
 	"fmt"
-	"slices"
 
 	"go.lumeweb.com/canimcp"
 	"go.lumeweb.com/mcpplane/model"
@@ -66,9 +65,11 @@ func BuildHostedServer(cfg ServerConfig) (ServerBuildResult, error) {
 	appLaunchers := hostedLauncherNames(appRows)
 	// Assembly validates the vocabulary/duplicates; this closes the remaining
 	// registered-vs-listed half by construction, since the configured inventory
-	// is exactly the rows this deployment wired.
+	// is exactly the rows this deployment wired. Order-insensitive: the
+	// assembly may report launchers in a different order than the table
+	// load-order.
 	verifyApps := func(installed []string) error {
-		if !slices.Equal(installed, appLaunchers) {
+		if err := hostedVerifyInstalled(installed, appRows); err != nil {
 			return fmt.Errorf("hosted MCP server: assembled app inventory %v does not match wired %v", installed, appLaunchers)
 		}
 		return nil
@@ -155,8 +156,13 @@ func BuildHostedServer(cfg ServerConfig) (ServerBuildResult, error) {
 	if err := hostedVerifyInstalled(installedApps, appRows); err != nil {
 		return ServerBuildResult{}, err
 	}
-	if err := sdk.RegisterTool(srv, deps, openAppDescriptor(appRows)); err != nil {
-		return ServerBuildResult{}, fmt.Errorf("hosted MCP server: register open_app: %w", err)
+	// Register the single directly-listed app launcher only when views exist,
+	// mirroring the FeatMCPApps gate so an apps-less hosted assembly exposes no
+	// open_app tool with an always-empty inventory.
+	if len(appRows) > 0 {
+		if err := sdk.RegisterTool(srv, deps, openAppDescriptor(appRows)); err != nil {
+			return ServerBuildResult{}, fmt.Errorf("hosted MCP server: register open_app: %w", err)
+		}
 	}
 
 	// Register the surface-gated prompt and pinner:// resource sets for parity
