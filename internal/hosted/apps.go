@@ -206,6 +206,7 @@ func pinStatusDescriptor(provider pinStatusProvider) model.ToolDescriptor {
 				"invoked":  "Pin status checked",
 			},
 		},
+		ReadOnly: true, // pure status poll: reads pin state, mutates nothing and is safe to retry
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			cid, _ := req.Arguments["cid"].(string)
 			if cid == "" {
