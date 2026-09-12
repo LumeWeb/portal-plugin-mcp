@@ -9,6 +9,7 @@ package hosted
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"go.lumeweb.com/canimcp"
 	"go.lumeweb.com/mcpplane/model"
@@ -56,16 +57,36 @@ func BuildHostedServer(cfg ServerConfig) (ServerBuildResult, error) {
 		listing = *cfg.Listing
 	}
 
+	// The hosted MCP Apps inventory: the shared table's CapHosted rows whose
+	// dependencies this deployment wires. Computed before assembly so the
+	// advertised capability (hostedProfile's FeatMCPApps) and the agent guide's
+	// open_app prose (Config.InstalledApps) reflect exactly the views that are
+	// about to register.
+	appRows := hostedAppRows()
+	appLaunchers := hostedLauncherNames(appRows)
+	// Assembly validates the vocabulary/duplicates; this closes the remaining
+	// registered-vs-listed half by construction, since the configured inventory
+	// is exactly the rows this deployment wired.
+	verifyApps := func(installed []string) error {
+		if !slices.Equal(installed, appLaunchers) {
+			return fmt.Errorf("hosted MCP server: assembled app inventory %v does not match wired %v", installed, appLaunchers)
+		}
+		return nil
+	}
+
 	// Assemble the hosted presentation (compiled catalog surface + direct set)
 	// from the public pinner contract. Hosted mode excludes the Sia vault and
 	// portal admin from the surface by construction.
 	presentation, err := mcp.Assemble(mcp.Config{
-		DomainScope: toAssemblyScope(cfg.DomainScope),
-		Hosted:      true,
-		Deps:        bundle,
-		Transfer:    transferDeps,
-		Listing:     &listing,
-		DevTools:    cfg.DevTools,
+		DomainScope:         toAssemblyScope(cfg.DomainScope),
+		Hosted:              true,
+		Deps:                bundle,
+		Transfer:            transferDeps,
+		Listing:             &listing,
+		DevTools:            cfg.DevTools,
+		Profile:             hostedProfile(appRows),
+		InstalledApps:       appLaunchers,
+		VerifyInstalledApps: verifyApps,
 	})
 	if err != nil {
 		return ServerBuildResult{}, fmt.Errorf("hosted MCP server: assemble presentation: %w", err)
@@ -108,6 +129,34 @@ func BuildHostedServer(cfg ServerConfig) (ServerBuildResult, error) {
 		if err := sdk.RegisterTool(srv, deps, d); err != nil {
 			return ServerBuildResult{}, fmt.Errorf("hosted MCP server: register direct tool %q: %w", d.Name, err)
 		}
+	}
+
+	// Wire the hosted MCP Apps: install the selected views (each registers a
+	// ui:// resource + tool→view association through the shared appswire
+	// seam), assert the installed set matches the wired inventory, then
+	// register the consolidated open_app launcher, the single directly-listed
+	// app tool on the hosted surface.
+	//
+	// The pin creator's poll provider authenticates each request as the calling
+	// user via the hosted credential on the request context. Resolve it before
+	// the scoped app-install so the serialized install has a stable provider.
+	// (installHostedAppsSerialized also scopes the SDK tool-registrar seam,
+	// which sdk.RegisterAppTool uses for the app-only helpers, to this build.)
+	cfgMgr := bundle.CfgMgr()
+	var pins pinStatusProvider
+	if cfgMgr != nil {
+		pins = newHostedPinProvider(bundle.Pins, cfgMgr, cfgMgr.Config().Secure)
+	}
+
+	installedApps, err := installHostedAppsSerialized(srv, deps, appRows, cfg.BaseURL, pins, transferDeps.PresignedUpload, transferDeps.FileDrop)
+	if err != nil {
+		return ServerBuildResult{}, err
+	}
+	if err := hostedVerifyInstalled(installedApps, appRows); err != nil {
+		return ServerBuildResult{}, err
+	}
+	if err := sdk.RegisterTool(srv, deps, openAppDescriptor(appRows)); err != nil {
+		return ServerBuildResult{}, fmt.Errorf("hosted MCP server: register open_app: %w", err)
 	}
 
 	// Register the surface-gated prompt and pinner:// resource sets for parity

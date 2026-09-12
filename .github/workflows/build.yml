@@ -12,8 +12,11 @@ jobs:
     with:
       additional_dependencies: 'go.lumeweb.com/portal-plugin-core@develop,go.lumeweb.com/portal-plugin-dashboard@develop'
       build_tags: no_tunnel
-      # The hosted MCP runtime is owned in-plugin (internal/hosted) on the
-      # public go.lumeweb.com/pinner + mcpplane contracts; there is no
-      # pinner-cli/mcpembed dependency, so `go generate ./...` is a no-op and no
-      # Node/pnpm toolchain is needed to regenerate embed assets.
+      # pinner's canvasassets embeds aren't committed; stage them into the
+      # pinner module this build resolves before compiling.
+      setup_script: |
+        set -e
+        command -v node >/dev/null 2>&1 || { echo "no node on image; installing"; curl -fsSL https://deb.nodesource.com/setup_22.x | bash -; apt-get install -y nodejs; }
+        command -v pnpm >/dev/null 2>&1 || npm install -g pnpm@10.33.2
+        bash scripts/ensure-canvasassets.sh
     secrets: inherit
