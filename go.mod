@@ -15,10 +15,11 @@ require (
 	go.lumeweb.com/canimcp v0.0.0-20260912112527-1c27fd5becdd
 	go.lumeweb.com/httputil v0.5.8
 	go.lumeweb.com/ipfs-sdk v0.1.97
-	go.lumeweb.com/mcpplane v0.0.0-20260912095121-3753dd085aa8
+	go.lumeweb.com/mcpforge v0.0.0-20260907155938-f64f92060f4e
+	go.lumeweb.com/mcpplane v0.0.0-20260912182821-5471ea064bdc
 	go.lumeweb.com/oauth v0.1.8
 	go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9
-	go.lumeweb.com/pinner v0.0.0-20260912121933-e94a6efa66bb
+	go.lumeweb.com/pinner v0.0.0-20260912180402-b6294ce18ac9
 	go.lumeweb.com/portal v0.5.2-0.20260901033111-4780b61cb79a
 	go.lumeweb.com/portal-middleware v0.3.7
 	go.lumeweb.com/portal-router v0.7.7
@@ -35,6 +36,7 @@ require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2 // indirect
 	github.com/Jorropo/jsync v1.0.1 // indirect
 	github.com/STARRY-S/zip v0.2.3 // indirect
+	github.com/a-h/templ v0.3.1020 // indirect
 	github.com/adjust/rmq/v5 v5.2.0 // indirect
 	github.com/alicebob/miniredis/v2 v2.37.0 // indirect
 	github.com/andybalholm/brotli v1.2.3 // indirect
@@ -256,7 +258,7 @@ require (
 	go.lumeweb.com/gswagger v0.20.12 // indirect
 	go.lumeweb.com/ipfs-content v0.1.18 // indirect
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64 // indirect
-	go.lumeweb.com/mcpforge v0.0.0-20260907155938-f64f92060f4e // indirect
+	go.lumeweb.com/mcpcanvas v0.0.0-20260907112052-7adbd4d8dcac // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelzap v0.20.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho v0.70.0 // indirect
