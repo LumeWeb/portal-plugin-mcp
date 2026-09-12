@@ -12,13 +12,13 @@ require (
 	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/samber/lo v1.53.0
 	github.com/stretchr/testify v1.12.1
-	go.lumeweb.com/canimcp v0.0.0-20260907101331-ba497f0bb72a
+	go.lumeweb.com/canimcp v0.0.0-20260912112527-1c27fd5becdd
 	go.lumeweb.com/httputil v0.5.8
 	go.lumeweb.com/ipfs-sdk v0.1.97
 	go.lumeweb.com/mcpplane v0.0.0-20260912095121-3753dd085aa8
 	go.lumeweb.com/oauth v0.1.8
 	go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9
-	go.lumeweb.com/pinner v0.0.0-20260912100852-1d4a23c50d13
+	go.lumeweb.com/pinner v0.0.0-20260912113437-4f65a8c39df4
 	go.lumeweb.com/portal v0.5.2-0.20260901033111-4780b61cb79a
 	go.lumeweb.com/portal-middleware v0.3.7
 	go.lumeweb.com/portal-router v0.7.7
