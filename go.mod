@@ -18,7 +18,7 @@ require (
 	go.lumeweb.com/mcpplane v0.0.0-20260908010148-2f0b05c8e8a9
 	go.lumeweb.com/oauth v0.1.8
 	go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9
-	go.lumeweb.com/pinner v0.0.0-20260912011732-562bc849d6ec
+	go.lumeweb.com/pinner v0.0.0-20260912083910-e9078eb61424
 	go.lumeweb.com/portal v0.5.2-0.20260901033111-4780b61cb79a
 	go.lumeweb.com/portal-middleware v0.3.7
 	go.lumeweb.com/portal-router v0.7.7
