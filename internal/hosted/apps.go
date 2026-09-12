@@ -317,22 +317,22 @@ func installHostedAppsSerialized(srv *sdk.Server, deps sdk.HandlerDeps, rows []a
 }
 
 // hostedVerifyInstalled checks the installed launcher set equals the wired
-// rows, so the advertised inventory (InstalledApps) and the wire surface
-// can't drift: an over- or under-install fails the build.
+// rows bidirectionally, so the advertised inventory (InstalledApps) and the
+// wire surface can't drift: an over- or under-install fails the build. The
+// length check alone is not enough — a duplicate in `installed` (e.g. ["a","a"]
+// for rows ["a","b"]) would satisfy it while silently dropping row "b", so
+// every wired row must also appear in the installed set.
 func hostedVerifyInstalled(installed []string, rows []appswire.ViewSpec) error {
 	if len(installed) != len(rows) {
 		return fmt.Errorf("hosted MCP server: installed %d app views, wired %d", len(installed), len(rows))
 	}
+	installedSet := make(map[string]struct{}, len(installed))
 	for _, name := range installed {
-		match := false
-		for _, r := range rows {
-			if r.Launcher == name {
-				match = true
-				break
-			}
-		}
-		if !match {
-			return fmt.Errorf("hosted MCP server: installed app view %q is not in the wired rows", name)
+		installedSet[name] = struct{}{}
+	}
+	for _, r := range rows {
+		if _, ok := installedSet[r.Launcher]; !ok {
+			return fmt.Errorf("hosted MCP server: wired app view %q was not installed", r.Launcher)
 		}
 	}
 	return nil

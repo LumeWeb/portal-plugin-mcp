@@ -227,3 +227,18 @@ func TestHostedVerifyInstalledOrderInsensitive(t *testing.T) {
 	missing := launchers[:len(launchers)-1]
 	assert.Error(t, hostedVerifyInstalled(missing, rows))
 }
+
+// TestHostedVerifyInstalledRejectsDuplicateUnderInstall checks a duplicate in
+// `installed` with a matching length cannot silently drop a wired row: rows
+// ["a","b"] vs installed ["a","a"] satisfies only the length check, so the
+// wired row "b" must still be flagged as missing to keep the drift invariant
+// bidirectional.
+func TestHostedVerifyInstalledRejectsDuplicateUnderInstall(t *testing.T) {
+	rows := hostedAppRows()
+	require.GreaterOrEqual(t, len(rows), 2, "need at least two rows to exercise a duplicate")
+
+	launchers := hostedLauncherNames(rows)
+	dupe := append([]string{launchers[0], launchers[0]}, launchers[2:]...)
+	require.Len(t, dupe, len(launchers), "duplicate must preserve total length")
+	assert.Error(t, hostedVerifyInstalled(dupe, rows), "duplicate under-install must fail even when lengths match")
+}
