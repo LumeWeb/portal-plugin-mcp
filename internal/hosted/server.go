@@ -7,6 +7,7 @@ import (
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner/assembly"
+	"go.lumeweb.com/pinner/mcp"
 	"go.lumeweb.com/pinner/mcp/hosted"
 )
 
@@ -53,6 +54,18 @@ type Options struct {
 	// BuildServer so their presigned upload PUT / filedrop GET URLs mint
 	// against the real origin rather than a loopback temp port.
 	BaseURL string
+
+	// Listing, when set, is the explicit shared tool-listing policy for this
+	// hosted server: the tools/list materialization strategy (progressive vs
+	// flat) and the meta-on-flat switch. It aliases the shared
+	// go.lumeweb.com/pinner/mcp ListingPolicy and is threaded into BuildServer
+	// (and the public pinner Assembly) so the hosted tools/list resolves
+	// through the one shared policy/selector seam the self-hosted CLI assembly
+	// uses. When nil, the hosted construction resolves the shared flat policy
+	// for its web audience via pinner/mcp.PolicyForHost (Claude Web, Grok Web,
+	// and ChatGPT/OpenAI Web all select flat) — see ServerBuildResult.Listing
+	// for the resolved value.
+	Listing *mcp.ListingPolicy
 }
 
 // ServerConfig carries the construction values a BuildServer implementation
@@ -72,6 +85,12 @@ type ServerConfig struct {
 
 	// BaseURL is the externally reachable origin of this hosted server.
 	BaseURL string
+
+	// Listing is the explicit shared tool-listing policy threaded to the
+	// BuildServer, when the embedding host declared one. When nil, the
+	// BuildServer resolves the shared flat web policy for the hosted audience
+	// (see runtime.go hostedWebListingPolicy).
+	Listing *mcp.ListingPolicy
 }
 
 // ServerBuildResult carries what New needs to mount a hosted server: the SDK
@@ -83,6 +102,13 @@ type ServerBuildResult struct {
 	Server *sdk.Server
 	// Transfer carries the IPFS byte-route coordinators (never vault).
 	Transfer HostedTransfer
+	// Listing is the resolved tool-listing policy this server was assembled
+	// with (the shared pinner/mcp ListingPolicy — flat for the hosted web
+	// audience unless an explicit override was supplied). It lets an embedding
+	// host observe the tools/list strategy the server actually materializes,
+	// so it never has to guess which hosts the shared host selector maps to
+	// flat.
+	Listing mcp.ListingPolicy
 }
 
 // HostedTransfer carries the IPFS byte-route coordinators a hosted server
@@ -155,6 +181,7 @@ func New(opts Options) (http.Handler, error) {
 		CatalogDeps:        opts.CatalogDeps,
 		CredentialResolver: effectiveResolver,
 		BaseURL:            opts.BaseURL,
+		Listing:            opts.Listing,
 	})
 	if err != nil {
 		return nil, err

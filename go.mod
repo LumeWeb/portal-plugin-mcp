@@ -12,12 +12,13 @@ require (
 	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/samber/lo v1.53.0
 	github.com/stretchr/testify v1.12.1
+	go.lumeweb.com/canimcp v0.0.0-20260907101331-ba497f0bb72a
 	go.lumeweb.com/httputil v0.5.8
 	go.lumeweb.com/ipfs-sdk v0.1.97
 	go.lumeweb.com/mcpplane v0.0.0-20260908010148-2f0b05c8e8a9
 	go.lumeweb.com/oauth v0.1.8
 	go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9
-	go.lumeweb.com/pinner v0.0.0-20260911212911-a45ea03d4504
+	go.lumeweb.com/pinner v0.0.0-20260912011732-562bc849d6ec
 	go.lumeweb.com/portal v0.5.2-0.20260901033111-4780b61cb79a
 	go.lumeweb.com/portal-middleware v0.3.7
 	go.lumeweb.com/portal-router v0.7.7
@@ -250,7 +251,6 @@ require (
 	go.etcd.io/etcd/api/v3 v3.7.1 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.7.1 // indirect
 	go.etcd.io/etcd/client/v3 v3.7.1 // indirect
-	go.lumeweb.com/canimcp v0.0.0-20260907101331-ba497f0bb72a // indirect
 	go.lumeweb.com/configmanager v0.3.30 // indirect
 	go.lumeweb.com/event/v2 v2.1.0 // indirect
 	go.lumeweb.com/gswagger v0.20.12 // indirect
