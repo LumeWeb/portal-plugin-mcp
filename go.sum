@@ -756,6 +756,8 @@ go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9 h1:kb2adBZ8Ed11yuXoQw2I
 go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9/go.mod h1:DbO27Lr6pBSzC+HogQMNNVEZMvkAHYwckL7i79aTETM=
 go.lumeweb.com/pinner v0.0.0-20260912193304-7b25e0d1ead6 h1:9VF6GCPb0YomH41pXDIp8bmr1lZT6zdhhaJ6XtI8BkQ=
 go.lumeweb.com/pinner v0.0.0-20260912193304-7b25e0d1ead6/go.mod h1:ni3gEeGNpTZ5xOwtO9p87G0yChjaEeSTqVId4n2b5pY=
+go.lumeweb.com/pinner v0.0.0-20260912201636-209241d21591 h1:GJSz5phR9PiQHxqwg+biThFHmJYvBmVA0UchasHCFcs=
+go.lumeweb.com/pinner v0.0.0-20260912201636-209241d21591/go.mod h1:ni3gEeGNpTZ5xOwtO9p87G0yChjaEeSTqVId4n2b5pY=
 go.lumeweb.com/portal v0.5.2-0.20260901033111-4780b61cb79a h1:+q+2KWjZOahq+FbfPwJp/ZYRrHAaTrFs7VQMXAdRbuw=
 go.lumeweb.com/portal v0.5.2-0.20260901033111-4780b61cb79a/go.mod h1:uwlY3PU5oErOoB1mQrJi3MconTDWIFULfrDVuLja2jc=
 go.lumeweb.com/portal-middleware v0.3.7 h1:kq4SZq4T/uhauqHehw2JaTbNJpPpE8/EQAC3R737H7c=

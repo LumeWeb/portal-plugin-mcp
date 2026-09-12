@@ -28,6 +28,7 @@ import (
 	"go.lumeweb.com/pinner/core/pinning"
 	"go.lumeweb.com/pinner/mcp"
 	"go.lumeweb.com/pinner/mcp/appswire"
+	"go.lumeweb.com/pinner/mcp/hosted"
 )
 
 // hostedAppRows returns the app-view rows this hosted embed installs: the
@@ -235,8 +236,11 @@ func installHostedApps(srv *sdk.Server, rows []appswire.ViewSpec, baseURL string
 	registry := mcpapps.NewAppRegistry()
 	if baseURL != "" {
 		// Attribute every ui:// view to the externally reachable origin so the
-		// rendered app meta resolves against the real deployment.
-		registry.SetViewDomainResolver(func() string { return baseURL })
+		// rendered app meta resolves against the real deployment. The resolver
+		// domain must be the bare origin (the exact-origin check rejects
+		// pathed domains), while BaseURL itself may carry the resource path
+		// for coordinator presign URL minting.
+		registry.SetViewDomainResolver(func() string { return hosted.HTTPSOriginOf(baseURL) })
 	}
 
 	render := func(view canvas.View) string {
