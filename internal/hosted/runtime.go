@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"go.lumeweb.com/canimcp"
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner/assembly"
@@ -84,7 +85,15 @@ func BuildHostedServer(cfg ServerConfig) (ServerBuildResult, error) {
 			DevSnapshot: cfg.DevTools,
 		}),
 	}
+	// Only the DIRECT surface materializes on tools/list: the compiled
+	// descriptors carry DirectVisible exactly where the resolved listing policy
+	// materializes them (flat stamps every agent-safe op, progressive leaves
+	// the non-direct ops reachable only through the meta-tools below). Full
+	// dispatch still goes through the owning catalog gate via catalogToolHandler.
 	for _, t := range presentation.Tools {
+		if !t.DirectVisible {
+			continue
+		}
 		desc := t
 		desc.Handler = catalogToolHandler(cat, desc.Name, cfg.CredentialResolver)
 		if err := sdk.RegisterTool(srv, deps, desc); err != nil {
@@ -110,6 +119,28 @@ func BuildHostedServer(cfg ServerConfig) (ServerBuildResult, error) {
 	}
 	if err := sdk.RegisterResources(srv, presentation.Resources, presentation.ResourceTemplates); err != nil {
 		return ServerBuildResult{}, fmt.Errorf("hosted MCP server: register resources: %w", err)
+	}
+
+	// Register the progressive-disclosure meta-tools (search_tools,
+	// describe_tool, and the typed invoke_*_tool dispatchers) from the shared
+	// pinner/mcp presentation layer, gated on the RESOLVED listing policy this
+	// same assembly materializes: progressive always; flat unless the policy
+	// explicitly opts out with IncludeMetaOnFlat=false — never the hosted
+	// deployment mode. Catalog ops dispatch through the existing catalog gate
+	// (the same seam every direct catalog tool uses) and the shared
+	// HandlerDeps thread the per-request caps builder into the meta handlers.
+	if presentation.ServesMetaTools() {
+		metaDescs, err := presentation.MetaToolDescriptors(func(name string) model.ToolHandler {
+			return catalogToolHandler(cat, name, cfg.CredentialResolver)
+		})
+		if err != nil {
+			return ServerBuildResult{}, fmt.Errorf("hosted MCP server: build meta tools: %w", err)
+		}
+		for _, d := range metaDescs {
+			if err := sdk.RegisterTool(srv, deps, d); err != nil {
+				return ServerBuildResult{}, fmt.Errorf("hosted MCP server: register meta tool %q: %w", d.Name, err)
+			}
+		}
 	}
 
 	return ServerBuildResult{

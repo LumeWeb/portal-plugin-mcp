@@ -9,6 +9,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/mcpplane/sdk"
+	pinnermcp "go.lumeweb.com/pinner/mcp"
 )
 
 // TestBuildHostedServerAssemblesRealServer drives the REAL BuildServer seam
@@ -129,4 +131,68 @@ func TestBuildHostedServerDevToolsSurface(t *testing.T) {
 	assert.True(t, dev["dev_host_env"], "dev tools on: dev_host_env on tools/list")
 	assert.True(t, dev["dev_profile"], "dev tools on: dev_profile on tools/list")
 	assert.True(t, dev["dev_request"], "dev tools on: dev_request on tools/list")
+}
+
+// connectInMemory drives an assembled SDK server through an in-memory MCP
+// session: it connects the server transport and a named SDK client, returning
+// the client session for tools/list calls. Sessions close with the test.
+func connectInMemory(t *testing.T, srv *sdk.Server, client *mcp.Client) *mcp.ClientSession {
+	t.Helper()
+	ctx := context.Background()
+
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	_, err := srv.Connect(ctx, serverTransport, nil)
+	require.NoError(t, err, "server must connect over the in-memory transport")
+	cs, err := client.Connect(ctx, clientTransport, nil)
+	require.NoError(t, err, "client must connect")
+	t.Cleanup(func() { cs.Close() })
+	return cs
+}
+
+// TestBuildHostedServerMetaToolsSurface locks the progressive-discovery meta
+// tools as the shared pinner/mcp presentation surface: the five upstream
+// meta-tool descriptors register on tools/list whenever the RESOLVED listing
+// policy serves them (the hosted flat web policy keeps meta-on-flat by
+// default), and disappear when the policy opts out with
+// IncludeMetaOnFlat=false — while the direct surface itself stays wired.
+func TestBuildHostedServerMetaToolsSurface(t *testing.T) {
+	connect := func(t *testing.T, listing *pinnermcp.ListingPolicy) map[string]bool {
+		t.Helper()
+
+		depsFactory, err := NewCatalogDeps("https://pinner.xyz", true, BuildCatalogDeps)
+		require.NoError(t, err, "NewCatalogDeps must build the bundle")
+
+		res, err := BuildHostedServer(ServerConfig{
+			DomainScope: DomainScopeHosted,
+			CatalogDeps: depsFactory,
+			Listing:     listing,
+		})
+		require.NoError(t, err, "BuildHostedServer must assemble a server")
+
+		client := mcp.NewClient(&mcp.Implementation{Name: "pinner-meta-test", Version: "v1"}, nil)
+		clientSession := connectInMemory(t, res.Server, client)
+
+		tools, err := clientSession.ListTools(context.Background(), &mcp.ListToolsParams{})
+		require.NoError(t, err, "tools/list must succeed")
+		names := map[string]bool{}
+		for _, tool := range tools.Tools {
+			names[tool.Name] = true
+		}
+		return names
+	}
+
+	optOutFlat := pinnermcp.ListingPolicy{
+		Strategy:          pinnermcp.ListingFlat,
+		IncludeMetaOnFlat: &[]bool{false}[0],
+	}
+	noMeta := connect(t, &optOutFlat)
+	for _, name := range pinnermcp.MetaToolNames() {
+		assert.False(t, noMeta[name], "meta-on-flat opt-out: %s must be absent from tools/list", name)
+	}
+	assert.True(t, noMeta["agent_guide"], "opt-out still serves the direct surface")
+
+	withMeta := connect(t, nil)
+	for _, name := range pinnermcp.MetaToolNames() {
+		assert.True(t, withMeta[name], "resolved policy serves meta tools: %s on tools/list", name)
+	}
 }
