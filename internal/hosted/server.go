@@ -66,6 +66,13 @@ type Options struct {
 	// and ChatGPT/OpenAI Web all select flat) — see ServerBuildResult.Listing
 	// for the resolved value.
 	Listing *mcp.ListingPolicy
+
+	// DevTools, when set, appends the read-only dev_* introspection tools
+	// (dev_host_env, dev_profile, dev_request) to the assembled direct surface.
+	// The BuildServer should also enable the per-request dev wire snapshot so
+	// dev_host_env can report raw client capabilities. When false (the
+	// production default) the dev surface is absent.
+	DevTools bool
 }
 
 // ServerConfig carries the construction values a BuildServer implementation
@@ -91,6 +98,11 @@ type ServerConfig struct {
 	// BuildServer resolves the shared flat web policy for the hosted audience
 	// (see runtime.go hostedWebListingPolicy).
 	Listing *mcp.ListingPolicy
+
+	// DevTools declares the dev_* introspection surface for this embed. When
+	// true, the BuildServer registers the dev tools and builds every
+	// registered tool's RequestCaps with the dev wire snapshot enabled.
+	DevTools bool
 }
 
 // ServerBuildResult carries what New needs to mount a hosted server: the SDK
@@ -182,6 +194,7 @@ func New(opts Options) (http.Handler, error) {
 		CredentialResolver: effectiveResolver,
 		BaseURL:            opts.BaseURL,
 		Listing:            opts.Listing,
+		DevTools:           opts.DevTools,
 	})
 	if err != nil {
 		return nil, err

@@ -39,6 +39,8 @@ type API struct {
 	resourcePath string
 	// scopes are the scopes this MCP server supports.
 	scopes []string
+	// devTools toggles the dev_* MCP introspection tools (mcp.dev_tools).
+	devTools bool
 
 	// portalEndpoint is the portal base domain the hosted operations target
 	// (account/ipfs/websites/dns subdomains resolve under it).
@@ -82,6 +84,7 @@ func NewAPI() (core.API, []core.ContextBuilderOption, error) {
 				api.resourcePath = "/mcp"
 			}
 			api.scopes = cfg.Scopes
+			api.devTools = cfg.DevTools
 
 			// The OAuth/MCP flow requires TLS, so the resource URL and the
 			// protected-resource metadata URL are always built as https. See
@@ -146,6 +149,9 @@ func (a *API) Configure(gRouter router.Router, accessSvc core.AccessService) err
 		// mount under the same resource path below, so those URLs route back
 		// through the portal on the mcp subdomain.
 		BaseURL: a.baseURL + a.resourcePath,
+		// Register the read-only dev_* introspection tools only when the
+		// deployment opted in via the mcp.dev_tools config option.
+		DevTools: a.devTools,
 	})
 	if err != nil {
 		return fmt.Errorf("mcp: build hosted server: %w", err)
