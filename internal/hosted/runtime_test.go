@@ -150,11 +150,12 @@ func connectInMemory(t *testing.T, srv *sdk.Server, client *mcp.Client) *mcp.Cli
 }
 
 // TestBuildHostedServerMetaToolsSurface locks the progressive-discovery meta
-// tools as the shared pinner/mcp presentation surface: the five upstream
-// meta-tool descriptors register on tools/list whenever the RESOLVED listing
-// policy serves them (the hosted flat web policy keeps meta-on-flat by
-// default), and disappear when the policy opts out with
-// IncludeMetaOnFlat=false — while the direct surface itself stays wired.
+// tools as the shared pinner/mcp presentation surface: the hosted flat web
+// policy is a flat web cloud host under the shared selector, which drops the
+// discovery meta-tools explicitly (they would only advertise machinery that
+// resolves to nothing once flat serves the full agent-safe surface), and an
+// explicit IncludeMetaOnFlat=false opt-out reports the same surface — the
+// direct surface itself stays wired either way.
 func TestBuildHostedServerMetaToolsSurface(t *testing.T) {
 	connect := func(t *testing.T, listing *pinnermcp.ListingPolicy) map[string]bool {
 		t.Helper()
@@ -191,8 +192,9 @@ func TestBuildHostedServerMetaToolsSurface(t *testing.T) {
 	}
 	assert.True(t, noMeta["agent_guide"], "opt-out still serves the direct surface")
 
-	withMeta := connect(t, nil)
+	withDefault := connect(t, nil)
 	for _, name := range pinnermcp.MetaToolNames() {
-		assert.True(t, withMeta[name], "resolved policy serves meta tools: %s on tools/list", name)
+		assert.False(t, withDefault[name], "flat web host default keeps meta tool off tools/list: %s", name)
 	}
+	assert.True(t, withDefault["agent_guide"], "flat web host default still serves the direct surface")
 }
