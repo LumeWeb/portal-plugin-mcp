@@ -64,6 +64,7 @@ func BuildHostedServer(cfg ServerConfig) (ServerBuildResult, error) {
 		Deps:        bundle,
 		Transfer:    transferDeps,
 		Listing:     &listing,
+		DevTools:    cfg.DevTools,
 	})
 	if err != nil {
 		return ServerBuildResult{}, fmt.Errorf("hosted MCP server: assemble presentation: %w", err)
@@ -74,10 +75,13 @@ func BuildHostedServer(cfg ServerConfig) (ServerBuildResult, error) {
 	}
 
 	srv := sdk.NewServer(&sdk.ServerOptions{})
+	// The per-request capability view: every registered tool receives the
+	// resolved platform profile and, under dev tools, the raw wire snapshot.
+	deps := sdk.HandlerDeps{RequestCaps: requestCapsFunc(cfg.DevTools)}
 	for _, t := range presentation.Tools {
 		desc := t
 		desc.Handler = catalogToolHandler(cat, desc.Name, cfg.CredentialResolver)
-		if err := sdk.RegisterTool(srv, sdk.HandlerDeps{}, desc); err != nil {
+		if err := sdk.RegisterTool(srv, deps, desc); err != nil {
 			return ServerBuildResult{}, fmt.Errorf("hosted MCP server: register tool %q: %w", desc.Name, err)
 		}
 	}
@@ -86,7 +90,7 @@ func BuildHostedServer(cfg ServerConfig) (ServerBuildResult, error) {
 	// dispatch through the injected executors/coordinators, so they are
 	// registered as-is.
 	for _, d := range presentation.Direct {
-		if err := sdk.RegisterTool(srv, sdk.HandlerDeps{}, d); err != nil {
+		if err := sdk.RegisterTool(srv, deps, d); err != nil {
 			return ServerBuildResult{}, fmt.Errorf("hosted MCP server: register direct tool %q: %w", d.Name, err)
 		}
 	}

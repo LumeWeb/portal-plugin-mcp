@@ -83,3 +83,47 @@ func TestBuildHostedServerRegistersPromptAndResourceSurface(t *testing.T) {
 	require.NoError(t, err, "resources/templates/list must succeed")
 	assert.NotEmpty(t, templates.ResourceTemplates, "hosted server must expose resource templates")
 }
+
+// TestBuildHostedServerDevToolsSurface locks the dev-tools opt-in: the read-only
+// dev_* introspection tools must be absent from the production surface and
+// present on tools/list only when the construction declares DevTools.
+func TestBuildHostedServerDevToolsSurface(t *testing.T) {
+	ctx := context.Background()
+	connect := func(t *testing.T, cfg *ServerConfig) map[string]bool {
+		t.Helper()
+		depsFactory, err := NewCatalogDeps("https://pinner.xyz", true, BuildCatalogDeps)
+		require.NoError(t, err, "NewCatalogDeps must build the bundle")
+		cfg.DomainScope = DomainScopeHosted
+		cfg.CatalogDeps = depsFactory
+
+		res, err := BuildHostedServer(*cfg)
+		require.NoError(t, err, "BuildHostedServer must assemble a server")
+
+		clientTransport, serverTransport := mcp.NewInMemoryTransports()
+		_, err = res.Server.Connect(ctx, serverTransport, nil)
+		require.NoError(t, err, "server must connect over the in-memory transport")
+
+		client := mcp.NewClient(&mcp.Implementation{Name: "pinner-devtools-test", Version: "v1"}, nil)
+		cs, err := client.Connect(ctx, clientTransport, nil)
+		require.NoError(t, err, "client must connect")
+		defer cs.Close()
+
+		tools, err := cs.ListTools(ctx, &mcp.ListToolsParams{})
+		require.NoError(t, err, "tools/list must succeed")
+		names := map[string]bool{}
+		for _, tool := range tools.Tools {
+			names[tool.Name] = true
+		}
+		return names
+	}
+
+	production := connect(t, &ServerConfig{})
+	assert.False(t, production["dev_host_env"])
+	assert.False(t, production["dev_profile"])
+	assert.False(t, production["dev_request"])
+
+	dev := connect(t, &ServerConfig{DevTools: true})
+	assert.True(t, dev["dev_host_env"], "dev tools on: dev_host_env on tools/list")
+	assert.True(t, dev["dev_profile"], "dev tools on: dev_profile on tools/list")
+	assert.True(t, dev["dev_request"], "dev tools on: dev_request on tools/list")
+}
