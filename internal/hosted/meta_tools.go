@@ -282,8 +282,10 @@ func (s *metaSurface) onboard() onboardingResult {
 // search returns tools matching a non-empty keyword query, porting the CLI
 // assembly's layered ranking (measured by matchRank) over the indexed
 // surface. An empty query with an explicit category browses that whole
-// category. limit caps the results (<=0 means no cap).
-func (s *metaSurface) search(query, category string, limit int) []toolSummary {
+// category. limit caps the results (<=0 means no cap). It returns the capped
+// list along with the full pre-cap match count so the caller can report a
+// truthful total when results are truncated.
+func (s *metaSurface) search(query, category string, limit int) ([]toolSummary, int) {
 	query = strings.ToLower(strings.TrimSpace(query))
 
 	type ranked struct {
@@ -316,10 +318,11 @@ func (s *metaSurface) search(query, category string, limit int) []toolSummary {
 	for _, r := range results {
 		summaries = append(summaries, r.summary)
 	}
+	total := len(summaries)
 	if limit > 0 && len(summaries) > limit {
 		summaries = summaries[:limit]
 	}
-	return summaries
+	return summaries, total
 }
 
 // suggest returns up to max tool names close to the given (unknown) name, so
@@ -485,15 +488,18 @@ func registerMetaSearchTools(srv *sdk.Server, ms *metaSurface) error {
 		var data []byte
 		if isOnboardingQuery(strings.ToLower(strings.TrimSpace(in.Query))) && in.Category == "" {
 			res := ms.onboard()
-			// Honor the documented limit contract on the onboarding path too.
+			// Honor the documented limit contract on the onboarding path too,
+			// keeping the truthful pre-cap total so the agent sees how many
+			// matches were truncated.
+			total := res.Total
 			if in.Limit > 0 && len(res.Tools) > in.Limit {
 				res.Tools = res.Tools[:in.Limit]
-				res.Total = len(res.Tools)
 			}
+			res.Total = total
 			data, err = json.Marshal(res)
 		} else {
-			tools := ms.search(in.Query, in.Category, in.Limit)
-			data, err = json.Marshal(searchResult{Tools: tools, Total: len(tools)})
+			tools, total := ms.search(in.Query, in.Category, in.Limit)
+			data, err = json.Marshal(searchResult{Tools: tools, Total: total})
 		}
 		if err != nil {
 			return model.ToolResult{}, err

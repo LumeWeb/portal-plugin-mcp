@@ -213,3 +213,49 @@ func TestHostedExplicitFlatWithoutMetaOmitsMetaTools(t *testing.T) {
 		assert.Truef(t, names[name], "explicit flat surface must keep direct tool %q (got %v)", name, names)
 	}
 }
+
+// TestHostedSearchTotalReportsPreCapCount pins the truthful-total contract:
+// when a limit truncates search results (or the onboarding listing), Total
+// must report the pre-cap match count so a capped response still signals that
+// additional matches were truncated rather than silently capping discovery at
+// exactly the requested limit.
+func TestHostedSearchTotalReportsPreCapCount(t *testing.T) {
+	progressive := pinnermcp.DefaultPolicy()
+	_, cs := hostedTestBuild(t, &progressive)
+
+	callSearch := func(args map[string]any) searchResult {
+		t.Helper()
+		call, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+			Name:      metaToolSearch,
+			Arguments: args,
+		})
+		require.NoError(t, err)
+		require.False(t, call.IsError, "search_tools must resolve successfully")
+		require.NotEmpty(t, call.Content, "search_tools must return content")
+		text, ok := call.Content[0].(*mcp.TextContent)
+		require.True(t, ok, "search_tools must return text content")
+		var res searchResult
+		require.NoError(t, json.Unmarshal([]byte(text.Text), &res), "must decode the search envelope")
+		return res
+	}
+
+	// No limit: every match is returned and Total equals the returned count.
+	unbounded := callSearch(map[string]any{"query": "pins"})
+	require.Positive(t, unbounded.Total, "searching 'pins' must match tools")
+	assert.Equal(t, len(unbounded.Tools), unbounded.Total,
+		"without a limit Total must equal the returned tool count")
+
+	// limit=1 truncates, but Total must still report the pre-cap count.
+	capped := callSearch(map[string]any{"query": "pins", "limit": 1})
+	require.Len(t, capped.Tools, 1, "limit=1 must cap the returned tools")
+	assert.Equal(t, unbounded.Total, capped.Total,
+		"Total must stay at the pre-cap match count when results are truncated")
+	assert.Greater(t, capped.Total, len(capped.Tools),
+		"truncation must be visible: Total must exceed the returned tool count")
+
+	// Onboarding (empty query) honors the limit while keeping the pre-cap total.
+	onboardCapped := callSearch(map[string]any{"limit": 1})
+	require.Len(t, onboardCapped.Tools, 1, "onboarding must honor the limit contract")
+	assert.Greater(t, onboardCapped.Total, len(onboardCapped.Tools),
+		"onboarding Total must report the pre-cap count, not the capped length")
+}
