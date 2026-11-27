@@ -1,6 +1,11 @@
 package mcp
 
 import (
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -164,6 +169,64 @@ func TestMiddlewareProtect_DebugLogging(t *testing.T) {
 	}
 	require.Contains(t, messages, "access token rejected: unknown or expired")
 	require.Contains(t, messages, "request denied: invalid or missing bearer token")
+}
+
+func TestCredentialResolver_MappingIgnoresTokenScopes(t *testing.T) {
+	// Invariant: the per-user credential mapping depends only on the numeric
+	// user ID stamped by the OAuth middleware. Whatever scopes a token carries,
+	// the minted Portal JWT carries the same identity claims and nothing else
+	// (no scope, no roles): authorization is re-derived downstream from the
+	// caller's stored account data.
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	resolver := NewCredentialResolver(priv, "example.com", 0)
+
+	decodePayload := func(t *testing.T, token string) map[string]any {
+		parts := strings.Split(token, ".")
+		require.Len(t, parts, 3)
+		raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+		require.NoError(t, err)
+		var claims map[string]any
+		require.NoError(t, json.Unmarshal(raw, &claims))
+		return claims
+	}
+
+	var claimSets []map[string]any
+	for _, scope := range []string{"offline_access", "offline_access example:scope"} {
+		oauthSvc := portalMocks.NewMockOAuthProviderService(t)
+		oauthSvc.EXPECT().ValidateAccessTokenInfo(mock.Anything, "scoped-token").
+			Return(validToken(7, testResource, scope, true), true)
+
+		mw := NewMiddleware(oauthSvc, testBaseURL, testResource, []string{"offline_access"})
+		var captured context.Context
+		served := mw.Protect(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			captured = r.Context()
+			w.WriteHeader(http.StatusOK)
+		}))
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+		req.Header.Set("Authorization", "Bearer scoped-token")
+		served.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.NotNil(t, captured)
+
+		tokenStr, err := resolver.TokenForRequest(captured)
+		require.NoError(t, err)
+		claims := decodePayload(t, tokenStr)
+		require.Equal(t, "7", claims["sub"])
+		require.Equal(t, []any{"login"}, claims["aud"])
+		claimSets = append(claimSets, claims)
+	}
+
+	// Identity claims are identical regardless of the token's scopes, and no
+	// extra claims (scope, roles, permissions) are minted from them.
+	a, b := claimSets[0], claimSets[1]
+	require.Equal(t, a["sub"], b["sub"])
+	require.Equal(t, a["aud"], b["aud"])
+	allowedKeys := map[string]bool{"iss": true, "sub": true, "exp": true, "aud": true}
+	for k := range a {
+		require.True(t, allowedKeys[k], "unexpected claim %q minted from token scopes", k)
+	}
 }
 
 func TestIsOAuthBearerFailure(t *testing.T) {

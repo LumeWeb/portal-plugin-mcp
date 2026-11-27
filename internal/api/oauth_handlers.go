@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -99,6 +100,41 @@ func init() {
 		Parse(layoutHTML))
 	template.Must(consentTemplate.New("page").Parse(consentHTML))
 	template.Must(consentTemplate.Parse(`{{define "consent"}}{{template "layout" .}}{{end}}`))
+}
+
+// grantedScope normalizes a requested scope string to the grant the
+// authorization server issues. Requested scopes are kept when they are
+// grantable (implemented), and every scope the MCP resource requires is
+// always included even when the client did not ask for it, so any token
+// issued satisfies its own resource server's requirements and no grant ever
+// carries a scope the server does not implement (RFC 6749 §3.3 lets the
+// server grant scopes beyond the request).
+func grantedScope(requested string, required, grantable []string) string {
+	allowed := make(map[string]struct{}, len(grantable))
+	for _, s := range grantable {
+		allowed[s] = struct{}{}
+	}
+	granted := make([]string, 0, len(grantable))
+	for _, s := range strings.Fields(requested) {
+		if _, ok := allowed[s]; ok && !slices.Contains(granted, s) {
+			granted = append(granted, s)
+		}
+	}
+	for _, s := range required {
+		if !slices.Contains(granted, s) {
+			granted = append(granted, s)
+		}
+	}
+	if len(granted) == 0 {
+		return strings.Join(grantable, " ")
+	}
+	return strings.Join(granted, " ")
+}
+
+// grantedScope normalizes a requested scope against the extension's resource
+// scopes (always granted) and grantable scopes (filter).
+func (e *OAuthExtension) grantedScope(requested string) string {
+	return grantedScope(requested, e.resourceScopes, e.implementedScopes)
 }
 
 // oauthReqFromValues builds an oauth.AuthorizeRequest from URL/form values.
@@ -195,9 +231,7 @@ func (e *OAuthExtension) handleOpenIDConfig(c echo.Context) error {
 		CodeChallengeMethodsSupported: []string{
 			"S256",
 		},
-		ScopesSupported: []string{
-			"offline_access",
-		},
+		ScopesSupported: e.implementedScopes,
 	})
 }
 
@@ -228,6 +262,9 @@ func (e *OAuthExtension) handleAuthorizeGET(c echo.Context) error {
 			zap.Error(err))
 		return unprocessable(c, err.Error())
 	}
+
+	// The consent page shows the effective grant, not the raw request.
+	req.Scope = e.grantedScope(req.Scope)
 
 	if _, err := mcontext.GetUserID(c); err != nil {
 		// The /app-login page renders the `app` query param as the connecting
@@ -299,6 +336,11 @@ func (e *OAuthExtension) handleAuthorizePOST(c echo.Context) error {
 		return unprocessable(c, err.Error())
 	}
 
+	// Only implemented scopes are granted: the code binds the normalized
+	// scope, so tokens never carry scopes the server does not implement.
+	requestedScope := req.Scope
+	req.Scope = e.grantedScope(req.Scope)
+
 	var body OAuthApproveRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
 		return unprocessable(c, "invalid request body")
@@ -334,8 +376,15 @@ func (e *OAuthExtension) handleAuthorizePOST(c echo.Context) error {
 		zap.String("resource", req.Resource),
 		zap.Uint64("user_id", uint64(userID)))
 
+	// RFC 6749 §3.3/§4.1.2: when the granted scope differs from the requested
+	// one, the client must be able to learn what was actually granted.
+	params := url.Values{"code": {code}}
+	if req.Scope != requestedScope {
+		params.Set("scope", req.Scope)
+	}
+
 	return c.JSON(http.StatusOK, OAuthRedirectResponse{
-		RedirectURI: buildRedirectURI(req, url.Values{"code": {code}}),
+		RedirectURI: buildRedirectURI(req, params),
 	})
 }
 
@@ -414,7 +463,10 @@ func (e *OAuthExtension) handleToken(c echo.Context) error {
 		return writeTokenError(c, err)
 	}
 	e.logDebug("token issued", zap.String("grant_type", grantType))
-	return writeTokens(c, resp)
+	// RFC 6749 §5.1/§6: the scope is returned whenever the granted scope
+	// differs from the scope the client requested on this call, so a client
+	// whose request was reduced never assumes an ungranted scope.
+	return writeTokens(c, resp, e.grantedScopeDiff(r.Context(), resp, r.PostFormValue("scope")))
 }
 
 // handleRegister implements Dynamic Client Registration (RFC 7591 §3.1).
@@ -481,14 +533,35 @@ func writeTokenError(c echo.Context, err error) error {
 	return c.JSON(http.StatusInternalServerError, map[string]string{"error": "server_error"})
 }
 
-// writeTokens writes the RFC 6749 §5.1 success response.
-func writeTokens(c echo.Context, resp *oauth.TokenResponse) error {
-	return c.JSON(http.StatusOK, map[string]any{
+// grantedScopeDiff returns the granted scope of the freshly issued access
+// token when it differs from the scope the client requested on this call
+// (empty otherwise). The library's TokenResponse carries no scope, so the
+// granted value is read back from the validated token. The comparison follows
+// RFC 6749 §5.1/§6: identical scope means the field is optional and omitted.
+func (e *OAuthExtension) grantedScopeDiff(ctx context.Context, resp *oauth.TokenResponse, requested string) string {
+	if resp == nil || resp.AccessToken == "" {
+		return ""
+	}
+	vt, ok := e.oauthSvc.ValidateAccessTokenInfo(ctx, resp.AccessToken)
+	if !ok || vt.Scope == "" || vt.Scope == requested {
+		return ""
+	}
+	return vt.Scope
+}
+
+// writeTokens writes the RFC 6749 §5.1 success response, carrying the granted
+// scope when it differs from the client's request.
+func writeTokens(c echo.Context, resp *oauth.TokenResponse, grantedScopeDiff string) error {
+	body := map[string]any{
 		"access_token":  resp.AccessToken,
 		"token_type":    resp.TokenType,
 		"expires_in":    resp.ExpiresIn,
 		"refresh_token": resp.RefreshToken,
-	})
+	}
+	if grantedScopeDiff != "" {
+		body["scope"] = grantedScopeDiff
+	}
+	return c.JSON(http.StatusOK, body)
 }
 
 // unprocessable writes a 400 JSON error body from an echo handler.

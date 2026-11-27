@@ -83,7 +83,10 @@ func NewAPI() (core.API, []core.ContextBuilderOption, error) {
 			if api.resourcePath == "" {
 				api.resourcePath = "/mcp"
 			}
-			api.scopes = cfg.Scopes
+			// Normalized so the enforced set (middleware requiredScopes, the
+			// registered resource) cannot diverge from what the OAuth extension
+			// grants: both derive from the same helper.
+			api.scopes = pluginConfig.NormalizeScopes(cfg.Scopes)
 			api.devTools = cfg.DevTools
 
 			// The OAuth/MCP flow requires TLS, so the resource URL and the

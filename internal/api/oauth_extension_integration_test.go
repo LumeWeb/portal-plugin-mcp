@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/oauth"
+	"go.lumeweb.com/portal-plugin-mcp/internal"
+	pluginConfig "go.lumeweb.com/portal-plugin-mcp/internal/config"
 	coreTesting "go.lumeweb.com/portal/core/testing"
 	portalservice "go.lumeweb.com/portal/service"
 )
@@ -256,6 +258,66 @@ func TestOAuthAuthorizeGET_RendersRegisteredClientName(t *testing.T) {
 	}, getOAuthExtensionTestOptions())
 }
 
+func TestOAuthAuthorizeGET_RendersGrantedScope(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// The consent page shows the effective grant: requested scopes that
+		// are not implemented are not granted, and the page reflects that.
+		token, _ := coreTesting.NewJWTHelper(ctx).CreateLoginToken(1)
+		q := url.Values{
+			"response_type": {"code"},
+			"client_id":     {"client_abc"},
+			"scope":         {"offline_access example:scope"},
+		}
+		oauthExt(ctx).EXPECT().ValidateAuthorizeRequest(mock.Anything, mock.Anything).Return(nil)
+		oauthExt(ctx).EXPECT().GetClientMetadata(mock.Anything, "client_abc").Return(nil, oauth.ErrClientNotFound)
+
+		req := ctx.NewAPIRequest(http.MethodGet, "/api/auth/oauth/authorize?"+q.Encode(), nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Body.String(), "Granted scopes: offline_access")
+		require.NotContains(t, rec.Body.String(), "example:scope")
+	}, getOAuthExtensionTestOptions())
+}
+
+func TestOAuthAuthorizePOST_GrantsOnlyImplementedScope(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// The issued authorization code binds the normalized scope, so tokens
+		// never carry scopes the server does not implement. Conforming clients
+		// keep working: the implemented scope they asked for is granted, and an
+		// unknown-only request still yields a usable default grant.
+		for _, tc := range []struct {
+			requested string
+			granted   string
+		}{
+			{"offline_access", "offline_access"},
+			{"offline_access example:scope", "offline_access"},
+			{"example:scope", "offline_access"},
+		} {
+			token, _ := coreTesting.NewJWTHelper(ctx).CreateLoginToken(1)
+			q := url.Values{
+				"response_type": {"code"},
+				"client_id":     {"client_abc"},
+				"scope":         {tc.requested},
+			}
+			oauthExt(ctx).EXPECT().ValidateAuthorizeRequest(mock.Anything, mock.Anything).Return(nil)
+			oauthExt(ctx).EXPECT().IssueAuthorizationCode(mock.Anything, mock.MatchedBy(func(req oauth.AuthorizeRequest) bool {
+				return req.Scope == tc.granted
+			}), uint(1)).Return("code1", nil)
+
+			req := ctx.NewAPIRequest(http.MethodPost, "/api/auth/oauth/authorize?"+q.Encode(), mustMarshalJSON(t, OAuthApproveRequest{Approve: true}))
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("Origin", "https://dashboard.example.com")
+			rec := httptest.NewRecorder()
+			ctx.Router().ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusOK, rec.Code, "requested %q", tc.requested)
+		}
+	}, getOAuthExtensionTestOptions())
+}
+
 func TestOAuthAuthorizePOST_CrossOriginRejected(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		token, _ := coreTesting.NewJWTHelper(ctx).CreateLoginToken(1)
@@ -291,6 +353,145 @@ func TestOAuthAuthorizePOST_SameOriginProceeds(t *testing.T) {
 	}, getOAuthExtensionTestOptions())
 }
 
+func TestOAuthTokenExchange_ScopeOmittedWhenIdentical(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// RFC 6749 §5.1: when the granted scope is identical to the scope the
+		// client requested on this call, returning it is optional and omitted.
+		oauthExt(ctx).EXPECT().ExchangeCode(mock.Anything, mock.Anything).Return(&oauth.TokenResponse{
+			AccessToken: "at", TokenType: "Bearer", ExpiresIn: 3600,
+		}, nil)
+		oauthExt(ctx).EXPECT().ValidateAccessTokenInfo(mock.Anything, "at").Return(oauth.ValidatedToken{
+			Scope: "offline_access",
+		}, true)
+
+		form := url.Values{
+			"grant_type":    {"authorization_code"},
+			"code":          {"code1"},
+			"client_id":     {"client_abc"},
+			"redirect_uri":  {"http://127.0.0.1:12345/cb"},
+			"code_verifier": {"verifier"},
+			"scope":         {"offline_access"},
+		}
+		req := ctx.NewAPIRequest(http.MethodPost, "/api/auth/oauth/token", []byte(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.NotContains(t, rec.Body.String(), "scope")
+	}, getOAuthExtensionTestOptions())
+}
+
+func TestOAuthAuthorizePOST_RedirectCarriesGrantedScope(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// RFC 6749 §3.3/§4.1.2: the client learns the granted scope on the
+		// authorization response whenever it differs from the request.
+		token, _ := coreTesting.NewJWTHelper(ctx).CreateLoginToken(1)
+		q := url.Values{
+			"response_type": {"code"},
+			"client_id":     {"client_abc"},
+			"scope":         {"example:scope"},
+		}
+		oauthExt(ctx).EXPECT().ValidateAuthorizeRequest(mock.Anything, mock.Anything).Return(nil)
+		oauthExt(ctx).EXPECT().IssueAuthorizationCode(mock.Anything, mock.MatchedBy(func(req oauth.AuthorizeRequest) bool {
+			return req.Scope == "offline_access"
+		}), uint(1)).Return("code1", nil)
+
+		req := ctx.NewAPIRequest(http.MethodPost, "/api/auth/oauth/authorize?"+q.Encode(), mustMarshalJSON(t, OAuthApproveRequest{Approve: true}))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Origin", "https://dashboard.example.com")
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Body.String(), "scope=offline_access")
+	}, getOAuthExtensionTestOptions())
+}
+
+func TestOAuthAuthorizeGET_OfflineAccessAlwaysGrantable(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// offline_access stays in the grantable set whatever the deployment
+		// configures: it is what the discovery documents advertise and what MCP
+		// clients request to obtain refresh tokens, so a resource scope list
+		// without it must not ungrant it.
+		token, _ := coreTesting.NewJWTHelper(ctx).CreateLoginToken(1)
+		q := url.Values{
+			"response_type": {"code"},
+			"client_id":     {"client_abc"},
+			"scope":         {"offline_access"},
+		}
+		oauthExt(ctx).EXPECT().ValidateAuthorizeRequest(mock.Anything, mock.Anything).Return(nil)
+		oauthExt(ctx).EXPECT().GetClientMetadata(mock.Anything, "client_abc").Return(nil, oauth.ErrClientNotFound)
+
+		req := ctx.NewAPIRequest(http.MethodGet, "/api/auth/oauth/authorize?"+q.Encode(), nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Body.String(), "Granted scopes: offline_access")
+	}, coreTesting.CombineOptions(
+		getOAuthExtensionTestOptions(),
+		coreTesting.WithAPIConfig(internal.PluginName, &pluginConfig.APIConfig{Scopes: []string{"mcp"}}),
+	))
+}
+
+func TestOAuthAuthorizeGET_IgnoresEmptyConfiguredScopes(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Empty or whitespace-only entries in the configured scope list are
+		// skipped, so issued scope values stay well-formed (RFC 6749 §3.3).
+		token, _ := coreTesting.NewJWTHelper(ctx).CreateLoginToken(1)
+		q := url.Values{
+			"response_type": {"code"},
+			"client_id":     {"client_abc"},
+			"scope":         {"offline_access"},
+		}
+		oauthExt(ctx).EXPECT().ValidateAuthorizeRequest(mock.Anything, mock.Anything).Return(nil)
+		oauthExt(ctx).EXPECT().GetClientMetadata(mock.Anything, "client_abc").Return(nil, oauth.ErrClientNotFound)
+
+		req := ctx.NewAPIRequest(http.MethodGet, "/api/auth/oauth/authorize?"+q.Encode(), nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Body.String(), "Granted scopes: offline_access mcp")
+		require.NotContains(t, rec.Body.String(), "offline_access  ")
+	}, coreTesting.CombineOptions(
+		getOAuthExtensionTestOptions(),
+		coreTesting.WithAPIConfig(internal.PluginName, &pluginConfig.APIConfig{Scopes: []string{"mcp", "", "  "}}),
+	))
+}
+
+func TestOAuthAuthorizeGET_GrantsConfiguredScopes(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// The granted scopes are the MCP API's configured scopes, the same list
+		// the resource registers and its middleware requires: a deployment that
+		// implements extra scopes keeps them grantable, and an unknown scope is
+		// never granted.
+		token, _ := coreTesting.NewJWTHelper(ctx).CreateLoginToken(1)
+		q := url.Values{
+			"response_type": {"code"},
+			"client_id":     {"client_abc"},
+			"scope":         {"mcp offline_access example:scope"},
+		}
+		oauthExt(ctx).EXPECT().ValidateAuthorizeRequest(mock.Anything, mock.Anything).Return(nil)
+		oauthExt(ctx).EXPECT().GetClientMetadata(mock.Anything, "client_abc").Return(nil, oauth.ErrClientNotFound)
+
+		req := ctx.NewAPIRequest(http.MethodGet, "/api/auth/oauth/authorize?"+q.Encode(), nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Body.String(), "Granted scopes: mcp offline_access")
+		require.NotContains(t, rec.Body.String(), "example:scope")
+	}, coreTesting.CombineOptions(
+		getOAuthExtensionTestOptions(),
+		coreTesting.WithAPIConfig(internal.PluginName, &pluginConfig.APIConfig{Scopes: []string{"mcp", "offline_access"}}),
+	))
+}
+
 func TestOAuthRegisterClient(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		oauthExt(ctx).EXPECT().RegisterClient(mock.Anything, mock.Anything).Return(&oauth.Client{
@@ -314,6 +515,13 @@ func TestOAuthTokenExchange(t *testing.T) {
 		oauthExt(ctx).EXPECT().ExchangeCode(mock.Anything, mock.Anything).Return(&oauth.TokenResponse{
 			AccessToken: "at", RefreshToken: "rt", TokenType: "Bearer", ExpiresIn: 3600,
 		}, nil)
+		// The granted scope is read back from the issued token and returned to
+		// the client (RFC 6749 §5.1): no scope was requested on this call, so
+		// the granted "offline_access" differs and must be carried in the
+		// response.
+		oauthExt(ctx).EXPECT().ValidateAccessTokenInfo(mock.Anything, "at").Return(oauth.ValidatedToken{
+			Scope: "offline_access",
+		}, true)
 
 		form := url.Values{
 			"grant_type":    {"authorization_code"},
