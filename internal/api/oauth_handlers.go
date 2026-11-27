@@ -469,6 +469,43 @@ func (e *OAuthExtension) handleToken(c echo.Context) error {
 	return writeTokens(c, resp, e.grantedScopeDiff(r.Context(), resp, r.PostFormValue("scope")))
 }
 
+// implementedGrantTypes and implementedResponseTypes are the values the
+// authorization server actually implements. Keep in sync with the grant and
+// response types advertised by the discovery documents (handleOpenIDConfig)
+// and the grants accepted by handleToken.
+var (
+	implementedGrantTypes    = []string{"authorization_code", "refresh_token"}
+	implementedResponseTypes = []string{"code"}
+)
+
+// filterSupported drops values outside the supported set and falls back to
+// the supported set when nothing remains. RFC 7591 §3.2.1 lets the server
+// modify registration metadata, so unsupported values are normalized away
+// rather than rejected: a client stays registrable regardless of the metadata
+// it sends, and only metadata the server implements is stored.
+func filterSupported(values, supported []string) []string {
+	allowed := make(map[string]struct{}, len(supported))
+	for _, v := range supported {
+		allowed[v] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(values))
+	filtered := make([]string, 0, len(values))
+	for _, v := range values {
+		if _, ok := allowed[v]; !ok {
+			continue
+		}
+		if _, dup := seen[v]; dup {
+			continue
+		}
+		seen[v] = struct{}{}
+		filtered = append(filtered, v)
+	}
+	if len(filtered) == 0 {
+		return append([]string(nil), supported...)
+	}
+	return filtered
+}
+
 // handleRegister implements Dynamic Client Registration (RFC 7591 §3.1).
 func (e *OAuthExtension) handleRegister(c echo.Context) error {
 	if c.Request().Method != http.MethodPost {
@@ -491,8 +528,8 @@ func (e *OAuthExtension) handleRegister(c echo.Context) error {
 	client, err := e.oauthSvc.RegisterClient(c.Request().Context(), oauth.ClientRegistration{
 		ClientName:        request.ClientName,
 		RedirectURIs:      request.RedirectURIs,
-		GrantTypes:        request.GrantTypes,
-		ResponseTypes:     request.ResponseTypes,
+		GrantTypes:        filterSupported(request.GrantTypes, implementedGrantTypes),
+		ResponseTypes:     filterSupported(request.ResponseTypes, implementedResponseTypes),
 		TokenEndpointAuth: request.TokenEndpointAuthMethod,
 	})
 	if err != nil {
