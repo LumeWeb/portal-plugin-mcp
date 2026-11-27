@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/portal-middleware/auth/jwt"
 	"go.lumeweb.com/portal-middleware/middleware"
 	"go.lumeweb.com/portal-plugin-mcp/internal"
+	pluginConfig "go.lumeweb.com/portal-plugin-mcp/internal/config"
 	router "go.lumeweb.com/portal-router"
 	"go.lumeweb.com/portal/core"
 	"go.uber.org/zap"
@@ -38,6 +39,13 @@ type OAuthExtension struct {
 	// named child of the context logger, set during startup. A nil logger is a
 	// no-op.
 	logger *zap.Logger
+	// implementedScopes are the scopes the authorization server grants. They
+	// are the MCP API's configured scopes (config.APIConfig.Scopes), the same
+	// list the MCP resource registers and its middleware requires, so the
+	// authorization server can never grant a scope its own resource server
+	// rejects. Captured at startup; falls back to the config default when the
+	// MCP API config is not registered.
+	implementedScopes []string
 }
 
 // NewOAuthExtension creates a dashboard API extension serving the MCP OAuth
@@ -61,6 +69,19 @@ func NewOAuthExtension() core.APIExtensionFactory {
 			// Ed25519 identity key, the key portal JWTs are signed with.
 			ext.publicKey = ctx.Config().Config().Core.Identity.PublicKey()
 			ext.logger = ctx.Logger().Named("mcp.oauth")
+
+			// The granted scopes are the MCP API's configured scopes: the same
+			// list the MCP resource registers and its middleware requires.
+			// Deriving them here keeps the authorization server and its resource
+			// server in sync.
+			if cfg, ok := ctx.Config().GetAPI(internal.PluginName).(*pluginConfig.APIConfig); ok && cfg != nil && len(cfg.Scopes) > 0 {
+				ext.implementedScopes = cfg.Scopes
+			}
+			if len(ext.implementedScopes) == 0 {
+				// Mirrors the config.APIConfig Scopes default; also covers boots
+				// without the MCP API registered (tests, standalone extension).
+				ext.implementedScopes = []string{"offline_access"}
+			}
 			return nil
 		})), nil
 	}

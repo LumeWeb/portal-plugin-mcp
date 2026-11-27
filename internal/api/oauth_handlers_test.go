@@ -13,20 +13,25 @@ import (
 )
 
 func TestGrantedScope(t *testing.T) {
+	defaultScopes := []string{"offline_access"}
 	cases := []struct {
-		requested string
-		want      string
+		implemented []string
+		requested   string
+		want        string
 	}{
-		{"offline_access", "offline_access"},
-		{"offline_access example:scope", "offline_access"},
-		{"example:scope offline_access", "offline_access"},
-		{"example:scope", "offline_access"},
-		{"", "offline_access"},
-		{"  offline_access  ", "offline_access"},
+		{defaultScopes, "offline_access", "offline_access"},
+		{defaultScopes, "offline_access example:scope", "offline_access"},
+		{defaultScopes, "example:scope offline_access", "offline_access"},
+		{defaultScopes, "example:scope", "offline_access"},
+		{defaultScopes, "", "offline_access"},
+		{defaultScopes, "  offline_access  ", "offline_access"},
+		// A deployment configuring extra implemented scopes keeps them granted.
+		{[]string{"mcp", "offline_access"}, "mcp offline_access example:scope", "mcp offline_access"},
+		{[]string{"mcp", "offline_access"}, "example:scope", "mcp offline_access"},
 	}
 	for _, tc := range cases {
-		if got := grantedScope(tc.requested); got != tc.want {
-			t.Errorf("grantedScope(%q) = %q, want %q", tc.requested, got, tc.want)
+		if got := grantedScope(tc.requested, tc.implemented); got != tc.want {
+			t.Errorf("grantedScope(%q, %v) = %q, want %q", tc.requested, tc.implemented, got, tc.want)
 		}
 	}
 }
@@ -130,7 +135,7 @@ func TestWriteTokens(t *testing.T) {
 		TokenType:    "Bearer",
 		ExpiresIn:    3600,
 		RefreshToken: "ref",
-	}); err != nil {
+	}, ""); err != nil {
 		t.Fatalf("writeTokens returned error: %v", err)
 	}
 	if c.Response().Status != 200 {
