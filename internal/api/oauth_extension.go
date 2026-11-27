@@ -79,10 +79,23 @@ func NewOAuthExtension() core.APIExtensionFactory {
 			// The MCP API's configured scopes are what its resource registers
 			// and its middleware requires: every issued token must carry them,
 			// so a token from this authorization server is always usable against
-			// its own resource server.
-			ext.resourceScopes = []string{"offline_access"}
-			if cfg, ok := ctx.Config().GetAPI(internal.PluginName).(*pluginConfig.APIConfig); ok && cfg != nil && len(cfg.Scopes) > 0 {
-				ext.resourceScopes = cfg.Scopes
+			// its own resource server. Entries are trimmed and empty or duplicate
+			// ones skipped, so issued scope values always match the RFC 6749 §3.3
+			// scope grammar.
+			ext.resourceScopes = make([]string, 0, 2)
+			if cfg, ok := ctx.Config().GetAPI(internal.PluginName).(*pluginConfig.APIConfig); ok && cfg != nil {
+				for _, scope := range cfg.Scopes {
+					scope = strings.TrimSpace(scope)
+					if scope == "" || slices.Contains(ext.resourceScopes, scope) {
+						continue
+					}
+					ext.resourceScopes = append(ext.resourceScopes, scope)
+				}
+			}
+			if len(ext.resourceScopes) == 0 {
+				// Mirrors the config.APIConfig Scopes default; also covers boots
+				// without the MCP API registered and configured-but-empty lists.
+				ext.resourceScopes = []string{"offline_access"}
 			}
 			// offline_access stays grantable whatever the deployment configures:
 			// it is what this server's discovery documents advertise and what
