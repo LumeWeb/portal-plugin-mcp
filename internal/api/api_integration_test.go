@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/oauth"
+	"go.lumeweb.com/portal-plugin-mcp/internal"
+	pluginConfig "go.lumeweb.com/portal-plugin-mcp/internal/config"
 	coreTesting "go.lumeweb.com/portal/core/testing"
 	portalservice "go.lumeweb.com/portal/service"
 )
@@ -42,6 +44,38 @@ func TestMCPEndpointCORSPreflight(t *testing.T) {
 			require.Contains(t, allowHeaders, h)
 		}
 	}, getMCPAPITestOptions())
+}
+
+func TestMCPEndpointAuthorizedNormalizesConfiguredScopes(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// The enforced scope set (middleware requiredScopes) is sanitized with
+		// the same helper the OAuth extension uses for its grants: empty,
+		// whitespace-padded and duplicate entries are dropped, so granted and
+		// enforced sets cannot diverge. A token carrying the configured scope
+		// "mcp" must therefore pass the gate — with the raw configured list the
+		// middleware would also require "" and "  ", which no token can carry.
+		mcpOAuth(ctx).EXPECT().ValidateAccessTokenInfo(mock.Anything, "mcp-token").
+			Return(oauth.ValidatedToken{
+				UserID:   1,
+				Expiry:   time.Now().Add(time.Hour),
+				Resource: mcpResource,
+				ClientID: "client_test",
+				Scope:    "mcp",
+			}, true)
+
+		req := ctx.NewAPIRequest(http.MethodPost, "/mcp", []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`))
+		req.Header.Set("Authorization", "Bearer mcp-token")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		require.NotEqual(t, http.StatusUnauthorized, rec.Code)
+		require.NotEqual(t, http.StatusForbidden, rec.Code)
+		require.Empty(t, rec.Header().Get("WWW-Authenticate"))
+	}, coreTesting.CombineOptions(
+		getMCPAPITestOptions(),
+		coreTesting.WithAPIConfig(internal.PluginName, &pluginConfig.APIConfig{Scopes: []string{"mcp", "", "  ", "mcp"}}),
+	))
 }
 
 func TestMCPProtectedResourceMetadata(t *testing.T) {

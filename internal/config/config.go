@@ -1,12 +1,33 @@
 package config
 
 import (
+	"strings"
+
 	z "github.com/Oudwins/zog"
+	"github.com/samber/lo"
 
 	"go.lumeweb.com/portal/config"
 )
 
 var _ config.APIConfig = (*APIConfig)(nil)
+
+// NormalizeScopes sanitizes a configured scope list for use as both the
+// resource's advertised/required scopes and the authorization server's
+// grantable set: entries are trimmed, empty or whitespace-only ones skipped,
+// duplicates removed, order preserved. When nothing valid remains it returns
+// the Scopes config default, so callers always get a usable non-empty set and
+// the set the authorization server grants cannot diverge from the set the
+// resource middleware enforces.
+func NormalizeScopes(scopes []string) []string {
+	normalized := lo.Uniq(lo.FilterMap(scopes, func(scope string, _ int) (string, bool) {
+		scope = strings.TrimSpace(scope)
+		return scope, scope != ""
+	}))
+	if len(normalized) == 0 {
+		return []string{"offline_access"}
+	}
+	return normalized
+}
 
 // APIConfig holds MCP API configuration.
 type APIConfig struct {
