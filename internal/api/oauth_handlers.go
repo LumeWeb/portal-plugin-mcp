@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/labstack/echo/v4"
+	"github.com/samber/lo"
 	"go.lumeweb.com/httputil"
 	"go.lumeweb.com/oauth"
 	mcontext "go.lumeweb.com/portal-middleware/context"
@@ -484,24 +485,13 @@ var (
 // rather than rejected: a client stays registrable regardless of the metadata
 // it sends, and only metadata the server implements is stored.
 func filterSupported(values, supported []string) []string {
-	allowed := make(map[string]struct{}, len(supported))
-	for _, v := range supported {
-		allowed[v] = struct{}{}
-	}
-	seen := make(map[string]struct{}, len(values))
-	filtered := make([]string, 0, len(values))
-	for _, v := range values {
-		if _, ok := allowed[v]; !ok {
-			continue
-		}
-		if _, dup := seen[v]; dup {
-			continue
-		}
-		seen[v] = struct{}{}
-		filtered = append(filtered, v)
-	}
+	allowed := lo.SliceToMap(supported, func(v string) (string, struct{}) { return v, struct{}{} })
+	filtered := lo.Uniq(lo.Filter(values, func(v string, _ int) bool {
+		_, ok := allowed[v]
+		return ok
+	}))
 	if len(filtered) == 0 {
-		return append([]string(nil), supported...)
+		return lo.Clone(supported)
 	}
 	return filtered
 }
