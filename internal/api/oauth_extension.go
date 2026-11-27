@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -39,10 +40,13 @@ type OAuthExtension struct {
 	// named child of the context logger, set during startup. A nil logger is a
 	// no-op.
 	logger *zap.Logger
-	// implementedScopes are the scopes the authorization server grants. They
-	// are the MCP API's configured scopes (config.APIConfig.Scopes), the same
-	// list the MCP resource registers and its middleware requires, so the
-	// authorization server can never grant a scope its own resource server
+	// implementedScopes are the scopes the authorization server grants:
+	// offline_access (which this server's discovery documents advertise and
+	// MCP clients request to obtain refresh tokens) unioned with the MCP API's
+	// configured scopes (config.APIConfig.Scopes), the same list the MCP
+	// resource registers and its middleware requires. The union keeps every
+	// client's offline_access request grantable whatever the deployment
+	// configures, while never granting a scope its own resource server
 	// rejects. Captured at startup; falls back to the config default when the
 	// MCP API config is not registered.
 	implementedScopes []string
@@ -70,17 +74,20 @@ func NewOAuthExtension() core.APIExtensionFactory {
 			ext.publicKey = ctx.Config().Config().Core.Identity.PublicKey()
 			ext.logger = ctx.Logger().Named("mcp.oauth")
 
-			// The granted scopes are the MCP API's configured scopes: the same
-			// list the MCP resource registers and its middleware requires.
-			// Deriving them here keeps the authorization server and its resource
-			// server in sync.
-			if cfg, ok := ctx.Config().GetAPI(internal.PluginName).(*pluginConfig.APIConfig); ok && cfg != nil && len(cfg.Scopes) > 0 {
-				ext.implementedScopes = cfg.Scopes
-			}
-			if len(ext.implementedScopes) == 0 {
-				// Mirrors the config.APIConfig Scopes default; also covers boots
-				// without the MCP API registered (tests, standalone extension).
-				ext.implementedScopes = []string{"offline_access"}
+			// The grantable scopes are offline_access plus the MCP API's
+			// configured scopes (the list the MCP resource registers and its
+			// middleware requires). offline_access stays unconditional: it is
+			// what this server's discovery documents advertise and what MCP
+			// clients request to obtain refresh tokens, so an operator's resource
+			// scope list must never ungrant it. Deriving the rest here keeps the
+			// authorization server and its resource server in sync.
+			ext.implementedScopes = []string{"offline_access"}
+			if cfg, ok := ctx.Config().GetAPI(internal.PluginName).(*pluginConfig.APIConfig); ok && cfg != nil {
+				for _, scope := range cfg.Scopes {
+					if scope != "" && !slices.Contains(ext.implementedScopes, scope) {
+						ext.implementedScopes = append(ext.implementedScopes, scope)
+					}
+				}
 			}
 			return nil
 		})), nil

@@ -408,6 +408,34 @@ func TestOAuthAuthorizePOST_RedirectCarriesGrantedScope(t *testing.T) {
 	}, getOAuthExtensionTestOptions())
 }
 
+func TestOAuthAuthorizeGET_OfflineAccessAlwaysGrantable(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// offline_access stays in the grantable set whatever the deployment
+		// configures: it is what the discovery documents advertise and what MCP
+		// clients request to obtain refresh tokens, so a resource scope list
+		// without it must not ungrant it.
+		token, _ := coreTesting.NewJWTHelper(ctx).CreateLoginToken(1)
+		q := url.Values{
+			"response_type": {"code"},
+			"client_id":     {"client_abc"},
+			"scope":         {"offline_access"},
+		}
+		oauthExt(ctx).EXPECT().ValidateAuthorizeRequest(mock.Anything, mock.Anything).Return(nil)
+		oauthExt(ctx).EXPECT().GetClientMetadata(mock.Anything, "client_abc").Return(nil, oauth.ErrClientNotFound)
+
+		req := ctx.NewAPIRequest(http.MethodGet, "/api/auth/oauth/authorize?"+q.Encode(), nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Body.String(), "Granted scopes: offline_access")
+	}, coreTesting.CombineOptions(
+		getOAuthExtensionTestOptions(),
+		coreTesting.WithAPIConfig(internal.PluginName, &pluginConfig.APIConfig{Scopes: []string{"mcp"}}),
+	))
+}
+
 func TestOAuthAuthorizeGET_GrantsConfiguredScopes(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		// The granted scopes are the MCP API's configured scopes, the same list
