@@ -15,23 +15,31 @@ import (
 func TestGrantedScope(t *testing.T) {
 	defaultScopes := []string{"offline_access"}
 	cases := []struct {
-		implemented []string
-		requested   string
-		want        string
+		required  []string
+		grantable []string
+		requested string
+		want      string
 	}{
-		{defaultScopes, "offline_access", "offline_access"},
-		{defaultScopes, "offline_access example:scope", "offline_access"},
-		{defaultScopes, "example:scope offline_access", "offline_access"},
-		{defaultScopes, "example:scope", "offline_access"},
-		{defaultScopes, "", "offline_access"},
-		{defaultScopes, "  offline_access  ", "offline_access"},
-		// A deployment configuring extra implemented scopes keeps them granted.
-		{[]string{"mcp", "offline_access"}, "mcp offline_access example:scope", "mcp offline_access"},
-		{[]string{"mcp", "offline_access"}, "example:scope", "mcp offline_access"},
+		// Default deployment: the resource requires offline_access only.
+		{defaultScopes, defaultScopes, "offline_access", "offline_access"},
+		{defaultScopes, defaultScopes, "offline_access example:scope", "offline_access"},
+		{defaultScopes, defaultScopes, "example:scope offline_access", "offline_access"},
+		{defaultScopes, defaultScopes, "example:scope", "offline_access"},
+		{defaultScopes, defaultScopes, "", "offline_access"},
+		{defaultScopes, defaultScopes, "  offline_access  ", "offline_access"},
+		// Deployment implementing mcp + offline_access.
+		{[]string{"mcp", "offline_access"}, []string{"mcp", "offline_access"}, "mcp offline_access example:scope", "mcp offline_access"},
+		{[]string{"mcp", "offline_access"}, []string{"mcp", "offline_access"}, "example:scope", "mcp offline_access"},
+		// Deployment implementing only mcp: offline_access stays grantable and
+		// the required scope is always granted so the token stays usable.
+		{[]string{"mcp"}, []string{"offline_access", "mcp"}, "offline_access", "offline_access mcp"},
+		{[]string{"mcp"}, []string{"offline_access", "mcp"}, "example:scope", "mcp"},
+		{[]string{"mcp"}, []string{"offline_access", "mcp"}, "", "mcp"},
 	}
 	for _, tc := range cases {
-		if got := grantedScope(tc.requested, tc.implemented); got != tc.want {
-			t.Errorf("grantedScope(%q, %v) = %q, want %q", tc.requested, tc.implemented, got, tc.want)
+		if got := grantedScope(tc.requested, tc.required, tc.grantable); got != tc.want {
+			t.Errorf("grantedScope(%q, required=%v, grantable=%v) = %q, want %q",
+				tc.requested, tc.required, tc.grantable, got, tc.want)
 		}
 	}
 }

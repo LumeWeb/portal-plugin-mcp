@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -101,35 +102,39 @@ func init() {
 	template.Must(consentTemplate.Parse(`{{define "consent"}}{{template "layout" .}}{{end}}`))
 }
 
-// grantedScope normalizes a requested scope string to the set of scopes the
-// authorization server grants: the intersection of the requested scopes with
-// implemented, or all implemented scopes when the intersection is empty. The
-// implemented set is the MCP API's configured scopes (config.APIConfig.Scopes,
-// captured at startup on the extension), so grants always match what the MCP
-// resource registers and requires. Granting a reduced scope is standard
-// (RFC 6749 §3.3: the server may ignore requested scopes) and the fallback
-// keeps every conforming client usable regardless of what it asked for.
-func grantedScope(requested string, implemented []string) string {
-	allowed := make(map[string]struct{}, len(implemented))
-	for _, s := range implemented {
+// grantedScope normalizes a requested scope string to the grant the
+// authorization server issues. Requested scopes are kept when they are
+// grantable (implemented), and every scope the MCP resource requires is
+// always included even when the client did not ask for it, so any token
+// issued satisfies its own resource server's requirements and no grant ever
+// carries a scope the server does not implement (RFC 6749 §3.3 lets the
+// server grant scopes beyond the request).
+func grantedScope(requested string, required, grantable []string) string {
+	allowed := make(map[string]struct{}, len(grantable))
+	for _, s := range grantable {
 		allowed[s] = struct{}{}
 	}
-	granted := make([]string, 0, len(implemented))
+	granted := make([]string, 0, len(grantable))
 	for _, s := range strings.Fields(requested) {
-		if _, ok := allowed[s]; ok {
+		if _, ok := allowed[s]; ok && !slices.Contains(granted, s) {
+			granted = append(granted, s)
+		}
+	}
+	for _, s := range required {
+		if !slices.Contains(granted, s) {
 			granted = append(granted, s)
 		}
 	}
 	if len(granted) == 0 {
-		return strings.Join(implemented, " ")
+		return strings.Join(grantable, " ")
 	}
 	return strings.Join(granted, " ")
 }
 
-// grantedScopeOnExt normalizes a requested scope against the extension's
-// configured implemented scopes.
+// grantedScope normalizes a requested scope against the extension's resource
+// scopes (always granted) and grantable scopes (filter).
 func (e *OAuthExtension) grantedScope(requested string) string {
-	return grantedScope(requested, e.implementedScopes)
+	return grantedScope(requested, e.resourceScopes, e.implementedScopes)
 }
 
 // oauthReqFromValues builds an oauth.AuthorizeRequest from URL/form values.
