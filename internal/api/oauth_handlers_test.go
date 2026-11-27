@@ -12,6 +12,25 @@ import (
 	"go.lumeweb.com/oauth"
 )
 
+func TestGrantedScope(t *testing.T) {
+	cases := []struct {
+		requested string
+		want      string
+	}{
+		{"offline_access", "offline_access"},
+		{"offline_access example:scope", "offline_access"},
+		{"example:scope offline_access", "offline_access"},
+		{"example:scope", "offline_access"},
+		{"", "offline_access"},
+		{"  offline_access  ", "offline_access"},
+	}
+	for _, tc := range cases {
+		if got := grantedScope(tc.requested); got != tc.want {
+			t.Errorf("grantedScope(%q) = %q, want %q", tc.requested, got, tc.want)
+		}
+	}
+}
+
 func TestOAuthReqFromValues(t *testing.T) {
 	vals := url.Values{
 		"response_type":         {"code"},

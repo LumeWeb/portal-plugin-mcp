@@ -256,6 +256,66 @@ func TestOAuthAuthorizeGET_RendersRegisteredClientName(t *testing.T) {
 	}, getOAuthExtensionTestOptions())
 }
 
+func TestOAuthAuthorizeGET_RendersGrantedScope(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// The consent page shows the effective grant: requested scopes that
+		// are not implemented are not granted, and the page reflects that.
+		token, _ := coreTesting.NewJWTHelper(ctx).CreateLoginToken(1)
+		q := url.Values{
+			"response_type": {"code"},
+			"client_id":     {"client_abc"},
+			"scope":         {"offline_access example:scope"},
+		}
+		oauthExt(ctx).EXPECT().ValidateAuthorizeRequest(mock.Anything, mock.Anything).Return(nil)
+		oauthExt(ctx).EXPECT().GetClientMetadata(mock.Anything, "client_abc").Return(nil, oauth.ErrClientNotFound)
+
+		req := ctx.NewAPIRequest(http.MethodGet, "/api/auth/oauth/authorize?"+q.Encode(), nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		ctx.Router().ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Body.String(), "Granted scopes: offline_access")
+		require.NotContains(t, rec.Body.String(), "example:scope")
+	}, getOAuthExtensionTestOptions())
+}
+
+func TestOAuthAuthorizePOST_GrantsOnlyImplementedScope(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// The issued authorization code binds the normalized scope, so tokens
+		// never carry scopes the server does not implement. Conforming clients
+		// keep working: the implemented scope they asked for is granted, and an
+		// unknown-only request still yields a usable default grant.
+		for _, tc := range []struct {
+			requested string
+			granted   string
+		}{
+			{"offline_access", "offline_access"},
+			{"offline_access example:scope", "offline_access"},
+			{"example:scope", "offline_access"},
+		} {
+			token, _ := coreTesting.NewJWTHelper(ctx).CreateLoginToken(1)
+			q := url.Values{
+				"response_type": {"code"},
+				"client_id":     {"client_abc"},
+				"scope":         {tc.requested},
+			}
+			oauthExt(ctx).EXPECT().ValidateAuthorizeRequest(mock.Anything, mock.Anything).Return(nil)
+			oauthExt(ctx).EXPECT().IssueAuthorizationCode(mock.Anything, mock.MatchedBy(func(req oauth.AuthorizeRequest) bool {
+				return req.Scope == tc.granted
+			}), uint(1)).Return("code1", nil)
+
+			req := ctx.NewAPIRequest(http.MethodPost, "/api/auth/oauth/authorize?"+q.Encode(), mustMarshalJSON(t, OAuthApproveRequest{Approve: true}))
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("Origin", "https://dashboard.example.com")
+			rec := httptest.NewRecorder()
+			ctx.Router().ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusOK, rec.Code, "requested %q", tc.requested)
+		}
+	}, getOAuthExtensionTestOptions())
+}
+
 func TestOAuthAuthorizePOST_CrossOriginRejected(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		token, _ := coreTesting.NewJWTHelper(ctx).CreateLoginToken(1)

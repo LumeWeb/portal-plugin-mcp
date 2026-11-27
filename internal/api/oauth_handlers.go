@@ -101,6 +101,35 @@ func init() {
 	template.Must(consentTemplate.Parse(`{{define "consent"}}{{template "layout" .}}{{end}}`))
 }
 
+// implementedScopes are the scopes the authorization server implements and
+// grants. Keep in sync with the scopes advertised by the discovery documents
+// (handleOpenIDConfig) and required by the MCP resource (config.APIConfig.Scopes).
+var implementedScopes = []string{"offline_access"}
+
+// grantedScope normalizes a requested scope string to the set of scopes the
+// authorization server grants: the intersection of the requested scopes with
+// implementedScopes, or all implementedScopes when the intersection is empty.
+// Granting a reduced scope is standard (RFC 6749 §3.3: the server may ignore
+// requested scopes) and the fallback keeps every conforming client usable
+// regardless of what it asked for, while tokens only ever carry scopes the
+// server actually implements.
+func grantedScope(requested string) string {
+	allowed := make(map[string]struct{}, len(implementedScopes))
+	for _, s := range implementedScopes {
+		allowed[s] = struct{}{}
+	}
+	granted := make([]string, 0, len(implementedScopes))
+	for _, s := range strings.Fields(requested) {
+		if _, ok := allowed[s]; ok {
+			granted = append(granted, s)
+		}
+	}
+	if len(granted) == 0 {
+		return strings.Join(implementedScopes, " ")
+	}
+	return strings.Join(granted, " ")
+}
+
 // oauthReqFromValues builds an oauth.AuthorizeRequest from URL/form values.
 func oauthReqFromValues(q url.Values) oauth.AuthorizeRequest {
 	return oauth.AuthorizeRequest{
@@ -229,6 +258,9 @@ func (e *OAuthExtension) handleAuthorizeGET(c echo.Context) error {
 		return unprocessable(c, err.Error())
 	}
 
+	// The consent page shows the effective grant, not the raw request.
+	req.Scope = grantedScope(req.Scope)
+
 	if _, err := mcontext.GetUserID(c); err != nil {
 		// The /app-login page renders the `app` query param as the connecting
 		// application's name. Pass the registered client display name, never
@@ -298,6 +330,10 @@ func (e *OAuthExtension) handleAuthorizePOST(c echo.Context) error {
 			zap.Error(err))
 		return unprocessable(c, err.Error())
 	}
+
+	// Only implemented scopes are granted: the code binds the normalized
+	// scope, so tokens never carry scopes the server does not implement.
+	req.Scope = grantedScope(req.Scope)
 
 	var body OAuthApproveRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
