@@ -492,6 +492,54 @@ func TestOAuthAuthorizeGET_GrantsConfiguredScopes(t *testing.T) {
 	))
 }
 
+func TestOAuthRegisterClient_NormalizesMetadata(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// Unsupported grant and response types are normalized away at
+		// registration (RFC 7591 §3.2.1), so stored metadata only carries what
+		// the authorization server implements. A client sending unsupported
+		// metadata stays registrable, and one sending a mix keeps its working
+		// values.
+		oauthExt(ctx).EXPECT().RegisterClient(mock.Anything, mock.MatchedBy(func(reg oauth.ClientRegistration) bool {
+			return len(reg.GrantTypes) == 1 && reg.GrantTypes[0] == "authorization_code" &&
+				len(reg.ResponseTypes) == 1 && reg.ResponseTypes[0] == "code"
+		})).Return(&oauth.Client{
+			ClientID: "new-client", RedirectURIs: []string{"http://127.0.0.1:9999/cb"},
+		}, nil)
+
+		body := mustMarshalJSON(t, OAuthRegisterRequest{
+			ClientName:    "mixed-client",
+			RedirectURIs:  []string{"http://127.0.0.1:9999/cb"},
+			GrantTypes:    []string{"authorization_code", "example:grant"},
+			ResponseTypes: []string{"code", "example:response"},
+		})
+		rec := request(t, ctx, http.MethodPost, "/api/auth/oauth/register", body)
+		require.Equal(t, http.StatusCreated, rec.Code)
+	}, getOAuthExtensionTestOptions())
+}
+
+func TestOAuthRegisterClient_OnlyUnsupportedMetadataFallsBack(t *testing.T) {
+	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
+		// When nothing requested is supported, the registration falls back to
+		// the implemented defaults so the client ends up with usable metadata.
+		oauthExt(ctx).EXPECT().RegisterClient(mock.Anything, mock.MatchedBy(func(reg oauth.ClientRegistration) bool {
+			return len(reg.GrantTypes) == 2 &&
+				reg.GrantTypes[0] == "authorization_code" && reg.GrantTypes[1] == "refresh_token" &&
+				len(reg.ResponseTypes) == 1 && reg.ResponseTypes[0] == "code"
+		})).Return(&oauth.Client{
+			ClientID: "fallback-client", RedirectURIs: []string{"http://127.0.0.1:9999/cb"},
+		}, nil)
+
+		body := mustMarshalJSON(t, OAuthRegisterRequest{
+			ClientName:    "fallback-client",
+			RedirectURIs:  []string{"http://127.0.0.1:9999/cb"},
+			GrantTypes:    []string{"example:grant"},
+			ResponseTypes: []string{"example:response"},
+		})
+		rec := request(t, ctx, http.MethodPost, "/api/auth/oauth/register", body)
+		require.Equal(t, http.StatusCreated, rec.Code)
+	}, getOAuthExtensionTestOptions())
+}
+
 func TestOAuthRegisterClient(t *testing.T) {
 	coreTesting.RunTestCase(t, func(tb coreTesting.TB, ctx coreTesting.TestContext) {
 		oauthExt(ctx).EXPECT().RegisterClient(mock.Anything, mock.Anything).Return(&oauth.Client{
